@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}My Pipeline — Employee{% endblock %}
+
+{% block sidebar %}
+<p class="text-uppercase text-secondary small fw-bold mt-2 mb-3">My Menu</p>
+
+<!-- Active link (highlighted) -->
+<a href="/dashboard/employee"
+   class="d-block text-white text-decoration-none mb-2 py-2 px-2 rounded"
+   style="background-color: rgba(255,255,255,0.15);">
+    <i class="bi bi-funnel me-2"></i>My Pipeline
+</a>
+
+<!-- Inactive links (coming in later sprints) -->
+<a href="#" class="d-block text-white-50 text-decoration-none mb-2 py-2 px-2 rounded">
+    <i class="bi bi-check2-square me-2"></i>My Tasks
+</a>
+<a href="#" class="d-block text-white-50 text-decoration-none mb-2 py-2 px-2 rounded">
+    <i class="bi bi-graph-up me-2"></i>My KPIs
+</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Page heading -->
+<h4 class="fw-bold text-primary mb-1">
+    <i class="bi bi-funnel me-2"></i>My Pipeline
+</h4>
+<p class="text-muted mb-4">View and manage your leads</p>
+
+<!-- Info banner -->
+<div class="alert alert-info d-flex align-items-center">
+    <i class="bi bi-info-circle-fill me-2 fs-5"></i>
+    <div>
+        <strong>Sprint 1 — Day 1 Scaffold</strong><br>
+        Your lead pipeline table will be built on Days 5 to 7.
+    </div>
+</div>
+
+<!-- Empty state card -->
+<div class="card shadow-sm">
+    <div class="card-body text-center py-5 text-muted">
+        <i class="bi bi-funnel" style="font-size: 3rem; opacity: 0.3;"></i>
+        <p class="mt-3 mb-0">Your leads will appear here once the pipeline is built.</p>
+    </div>
+</div>
+
+{% endblock %}

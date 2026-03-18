@@ -1,0 +1,18 @@
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: smt_backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+    restart: unless-stopped
