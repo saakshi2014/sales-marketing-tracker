@@ -1,5 +1,6 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, jsonify
 from dotenv import load_dotenv
+from firebase_config import initialize_firebase, get_firestore_client
 import os
 
 # Load environment variables from .env file
@@ -12,6 +13,9 @@ app = Flask(
 )
 
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+# Initialise Firebase when the app starts
+with app.app_context():
+    initialize_firebase()
 
 # ── ROUTES ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +40,22 @@ def m2_dashboard():
     return render_template('m2_dashboard.html')
 
 # ── RUN ───────────────────────────────────────────────────────────────────────
-
+@app.route('/test-firebase')
+def test_firebase():
+    """Temporary test route — confirms Firebase is connected"""
+    try:
+        db = get_firestore_client()
+        collections = [col.id for col in db.collections()]
+        return jsonify({
+            "status": "success",
+            "message": "Firebase connected successfully",
+            "collections": collections
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+    
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
