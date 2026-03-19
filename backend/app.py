@@ -1,9 +1,8 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, session, redirect, url_for
 from dotenv import load_dotenv
 from firebase_config import initialize_firebase, get_firestore_client
 import os
 
-# Load environment variables from .env file
 load_dotenv()
 
 app = Flask(
@@ -13,49 +12,98 @@ app = Flask(
 )
 
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-# Initialise Firebase when the app starts
+app.config['PERMANENT_SESSION'] = False
+
 with app.app_context():
     initialize_firebase()
 
-# ── ROUTES ────────────────────────────────────────────────────────────────────
+from routes.auth import auth_bp
+app.register_blueprint(auth_bp)
+
+
+def is_logged_in():
+    return 'uid' in session and 'role' in session
+
+
+def redirect_by_role(role):
+    if role == 'employee':
+        return redirect(url_for('employee_dashboard'))
+    elif role == 'm1_manager':
+        return redirect(url_for('m1_dashboard'))
+    elif role == 'm2_manager':
+        return redirect(url_for('m2_dashboard'))
+    else:
+        return redirect(url_for('login'))
+
 
 @app.route('/')
 def index():
+    if is_logged_in():
+        return redirect_by_role(session['role'])
     return render_template('login.html')
+
 
 @app.route('/login')
 def login():
+    if is_logged_in():
+        return redirect_by_role(session['role'])
     return render_template('login.html')
+
 
 @app.route('/dashboard/employee')
 def employee_dashboard():
-    return render_template('employee_dashboard.html')
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    if session['role'] != 'employee':
+        return redirect_by_role(session['role'])
+    return render_template('employee_dashboard.html',
+                           user_name=session.get('email', ''),
+                           role=session.get('role', ''))
+
 
 @app.route('/dashboard/m1')
 def m1_dashboard():
-    return render_template('m1_dashboard.html')
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    if session['role'] != 'm1_manager':
+        return redirect_by_role(session['role'])
+    return render_template('m1_dashboard.html',
+                           user_name=session.get('email', ''),
+                           role=session.get('role', ''))
+
 
 @app.route('/dashboard/m2')
 def m2_dashboard():
-    return render_template('m2_dashboard.html')
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    if session['role'] != 'm2_manager':
+        return redirect_by_role(session['role'])
+    return render_template('m2_dashboard.html',
+                           user_name=session.get('email', ''),
+                           role=session.get('role', ''))
 
-# ── RUN ───────────────────────────────────────────────────────────────────────
+
+@app.route('/logout')
+def logout_page():
+    session.clear()
+    response = redirect(url_for('login'))
+    response.delete_cookie('session')
+    return response
+
+
 @app.route('/test-firebase')
 def test_firebase():
-    """Temporary test route — confirms Firebase is connected"""
     try:
-        db = get_firestore_client()
+        db          = get_firestore_client()
         collections = [col.id for col in db.collections()]
         return jsonify({
-            "status": "success",
-            "message": "Firebase connected successfully",
+            "status":      "success",
+            "message":     "Firebase connected",
             "collections": collections
         })
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
-    
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

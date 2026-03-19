@@ -25,8 +25,10 @@
             Sales & Marketing Tracker
         </a>
         <div class="ms-auto d-flex align-items-center">
-            <span class="text-white me-3" id="navUserName"></span>
-            <a href="/login" class="btn btn-outline-light btn-sm">
+<span class="text-white me-3" id="navUserName">
+    {% if user_name %}{{ user_name }}{% endif %}
+</span>
+<a href="/logout" class="btn btn-outline-light btn-sm">
                 <i class="bi bi-box-arrow-right me-1"></i>Logout
             </a>
         </div>
