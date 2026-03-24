@@ -21,6 +21,8 @@ from routes.auth import auth_bp
 app.register_blueprint(auth_bp)
 from routes.stages import stages_bp
 app.register_blueprint(stages_bp)
+from routes.leads import leads_bp
+app.register_blueprint(leads_bp)
 
 def is_logged_in():
     return 'uid' in session and 'role' in session

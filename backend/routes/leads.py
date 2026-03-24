@@ -1,0 +1,347 @@
+"""
+leads.py — Leads API Routes
+Handles: create lead, fetch leads, update lead, change stage
+"""
+
+from flask import Blueprint, request, jsonify, session
+from firebase_config import get_firestore_client
+from firebase_admin import firestore
+import uuid
+from datetime import datetime
+
+leads_bp = Blueprint('leads', __name__)
+
+
+# ── HELPER: Check authentication ───────────────────────────────────────────────
+def require_auth():
+    if 'uid' not in session:
+        return jsonify({"error": "Not authenticated"}), 401
+    return None
+
+
+# ── ROUTE 1: Create a new lead ─────────────────────────────────────────────────
+@leads_bp.route('/api/leads', methods=['POST'])
+def create_lead():
+    """
+    Creates a new lead in Firestore.
+    Only employees and M1 managers can create leads.
+
+    Request body:
+    {
+        "name":        "John Smith",
+        "company":     "Acme Corp",
+        "email":       "john@acme.com",
+        "phone":       "+91 9876543210",
+        "linkedinUrl": "https://linkedin.com/in/johnsmith"
+    }
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # Validate required fields
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({"error": "Lead name is required"}), 400
+
+    uid    = session['uid']
+    role   = session['role']
+
+    # Determine teamId based on role
+    db       = get_firestore_client()
+    user_doc = db.collection('users').document(uid).get()
+    if not user_doc.exists:
+        return jsonify({"error": "User profile not found"}), 404
+
+    user_data = user_doc.to_dict()
+    team_id   = user_data.get('teamId', 'team_001')
+
+    # Generate unique lead ID
+    lead_id = str(uuid.uuid4())
+
+    # Build the lead document
+    lead = {
+        "leadId":       lead_id,
+        "employeeUid":  uid,
+        "teamId":       team_id,
+        "name":         name,
+        "company":      data.get('company', '').strip(),
+        "email":        data.get('email', '').strip(),
+        "phone":        data.get('phone', '').strip(),
+        "linkedinUrl":  data.get('linkedinUrl', '').strip(),
+        "currentStage": "stage_1_1",  # Always starts at Qualified – Pending Outreach
+        "isArchived":   False,
+        "createdAt":    firestore.SERVER_TIMESTAMP,
+        "updatedAt":    firestore.SERVER_TIMESTAMP
+    }
+
+    # Save to Firestore
+    db.collection('leads').document(lead_id).set(lead)
+
+    # Write first audit log entry
+    log_id = str(uuid.uuid4())
+    db.collection('audit_logs').document(log_id).set({
+        "logId":       log_id,
+        "leadId":      lead_id,
+        "employeeUid": uid,
+        "fromStage":   None,
+        "toStage":     "stage_1_1",
+        "changedAt":   firestore.SERVER_TIMESTAMP,
+        "notes":       "Lead created"
+    })
+
+    return jsonify({
+        "message": "Lead created successfully",
+        "leadId":  lead_id,
+        "lead":    {
+            "leadId":       lead_id,
+            "name":         lead['name'],
+            "company":      lead['company'],
+            "email":        lead['email'],
+            "phone":        lead['phone'],
+            "linkedinUrl":  lead['linkedinUrl'],
+            "currentStage": "stage_1_1",
+            "stageName":    "Qualified – Pending Outreach",
+            "isArchived":   False,
+        }
+    }), 201
+
+
+# ── ROUTE 2: Get all leads for current user ────────────────────────────────────
+@leads_bp.route('/api/leads', methods=['GET'])
+def get_leads():
+    """
+    Returns leads based on user role:
+    - Employee: only their own leads
+    - M1 Manager: all leads in their team
+    - M2 Manager: all leads in the organisation
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    uid  = session['uid']
+    role = session['role']
+
+    try:
+        db = get_firestore_client()
+
+        # Fetch leads based on role
+        if role == 'employee':
+            leads_ref = db.collection('leads')\
+                          .where('employeeUid', '==', uid)\
+                          .get()
+        elif role == 'm1_manager':
+            # Get M1's teamId from their user document
+            user_doc  = db.collection('users').document(uid).get()
+            team_id   = user_doc.to_dict().get('teamId', '')
+            leads_ref = db.collection('leads')\
+                          .where('teamId', '==', team_id)\
+                          .get()
+        else:
+            # M2 sees all leads
+            leads_ref = db.collection('leads').get()
+
+        # Fetch all pipeline stages for resolving stage names
+        stages_ref = db.collection('pipeline_stages').get()
+        stages_map = {}
+        for stage in stages_ref:
+            s = stage.to_dict()
+            stages_map[s['stageId']] = s['stageName']
+
+        # Build the leads list
+        leads_list = []
+        for lead_doc in leads_ref:
+            lead = lead_doc.to_dict()
+
+            # Resolve stage name
+            current_stage_id   = lead.get('currentStage', 'stage_1_1')
+            current_stage_name = stages_map.get(current_stage_id, 'Unknown')
+
+            # Format timestamps
+            created_at = lead.get('createdAt')
+            if hasattr(created_at, 'strftime'):
+                created_at = created_at.strftime('%d %b %Y')
+            else:
+                created_at = 'Just now'
+
+            leads_list.append({
+                "leadId":        lead.get('leadId'),
+                "name":          lead.get('name'),
+                "company":       lead.get('company', '—'),
+                "email":         lead.get('email', '—'),
+                "phone":         lead.get('phone', '—'),
+                "linkedinUrl":   lead.get('linkedinUrl', ''),
+                "currentStage":  current_stage_id,
+                "stageName":     current_stage_name,
+                "isArchived":    lead.get('isArchived', False),
+                "employeeUid":   lead.get('employeeUid'),
+                "createdAt":     created_at,
+            })
+
+        # Sort by most recently created first
+        leads_list.sort(key=lambda x: x['leadId'], reverse=True)
+
+        return jsonify({
+            "leads":       leads_list,
+            "total":       len(leads_list),
+            "activeCount": sum(1 for l in leads_list if not l['isArchived'])
+        })
+
+    except Exception as e:
+        print(f"Error fetching leads: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── ROUTE 3: Update lead details ───────────────────────────────────────────────
+@leads_bp.route('/api/leads/<lead_id>', methods=['PATCH'])
+def update_lead(lead_id):
+    """
+    Updates lead details (name, company, email, phone, linkedinUrl).
+    Does NOT change the pipeline stage — that is a separate route.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    try:
+        db       = get_firestore_client()
+        lead_ref = db.collection('leads').document(lead_id)
+        lead_doc = lead_ref.get()
+
+        if not lead_doc.exists:
+            return jsonify({"error": "Lead not found"}), 404
+
+        # Only allow updating these fields
+        allowed_fields = ['name', 'company', 'email', 'phone', 'linkedinUrl']
+        update_data    = {k: v for k, v in data.items() if k in allowed_fields}
+        update_data['updatedAt'] = firestore.SERVER_TIMESTAMP
+
+        lead_ref.update(update_data)
+
+        return jsonify({"message": "Lead updated successfully"})
+
+    except Exception as e:
+        print(f"Error updating lead: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── ROUTE 4: Change pipeline stage ────────────────────────────────────────────
+@leads_bp.route('/api/leads/<lead_id>/stage', methods=['PATCH'])
+def change_stage(lead_id):
+    """
+    Changes the pipeline stage of a lead.
+    Also writes an audit log entry for every stage change.
+
+    Request body: { "newStage": "stage_2", "notes": "optional note" }
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    data      = request.get_json()
+    new_stage = data.get('newStage') if data else None
+
+    if not new_stage:
+        return jsonify({"error": "newStage is required"}), 400
+
+    try:
+        db       = get_firestore_client()
+        lead_ref = db.collection('leads').document(lead_id)
+        lead_doc = lead_ref.get()
+
+        if not lead_doc.exists:
+            return jsonify({"error": "Lead not found"}), 404
+
+        lead_data  = lead_doc.to_dict()
+        from_stage = lead_data.get('currentStage')
+
+        # Check if new stage exists
+        stage_doc = db.collection('pipeline_stages').document(new_stage).get()
+        if not stage_doc.exists:
+            return jsonify({"error": "Invalid stage"}), 400
+
+        stage_data = stage_doc.to_dict()
+
+        # Update the lead
+        is_archived = stage_data.get('isArchived', False)
+        lead_ref.update({
+            "currentStage": new_stage,
+            "isArchived":   is_archived,
+            "updatedAt":    firestore.SERVER_TIMESTAMP
+        })
+
+        # Write audit log
+        log_id = str(uuid.uuid4())
+        db.collection('audit_logs').document(log_id).set({
+            "logId":       log_id,
+            "leadId":      lead_id,
+            "employeeUid": session['uid'],
+            "fromStage":   from_stage,
+            "toStage":     new_stage,
+            "changedAt":   firestore.SERVER_TIMESTAMP,
+            "notes":       data.get('notes', '')
+        })
+
+        return jsonify({
+            "message":      "Stage updated successfully",
+            "leadId":       lead_id,
+            "fromStage":    from_stage,
+            "toStage":      new_stage,
+            "stageName":    stage_data.get('stageName'),
+            "isArchived":   is_archived
+        })
+
+    except Exception as e:
+        print(f"Error changing stage: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── ROUTE 5: Get lead history (audit log) ─────────────────────────────────────
+@leads_bp.route('/api/leads/<lead_id>/history', methods=['GET'])
+def get_lead_history(lead_id):
+    """
+    Returns the full audit trail for a lead.
+    Shows every stage change with who changed it and when.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    try:
+        db   = get_firestore_client()
+        logs = db.collection('audit_logs')\
+                 .where('leadId', '==', lead_id)\
+                 .get()
+
+        # Fetch stage names
+        stages_ref = db.collection('pipeline_stages').get()
+        stages_map = {s.to_dict()['stageId']: s.to_dict()['stageName']
+                      for s in stages_ref}
+
+        history = []
+        for log in logs:
+            entry = log.to_dict()
+            history.append({
+                "logId":         entry.get('logId'),
+                "fromStage":     entry.get('fromStage'),
+                "fromStageName": stages_map.get(entry.get('fromStage'), 'Start'),
+                "toStage":       entry.get('toStage'),
+                "toStageName":   stages_map.get(entry.get('toStage'), 'Unknown'),
+                "notes":         entry.get('notes', ''),
+                "changedAt":     str(entry.get('changedAt', ''))
+            })
+
+        return jsonify({"history": history, "total": len(history)})
+
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        return jsonify({"error": str(e)}), 500
