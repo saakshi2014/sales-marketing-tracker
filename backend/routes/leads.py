@@ -345,3 +345,45 @@ def get_lead_history(lead_id):
     except Exception as e:
         print(f"Error fetching history: {e}")
         return jsonify({"error": str(e)}), 500
+    # ── ROUTE 6: Get team members (for M1 dashboard) ──────────────────────────────
+@leads_bp.route('/api/team/members', methods=['GET'])
+def get_team_members():
+    """
+    Returns all members of the M1 manager's team.
+    Used by M1 dashboard to show employee names in the table.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    uid  = session['uid']
+    role = session['role']
+
+    if role not in ['m1_manager', 'm2_manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        db = get_firestore_client()
+
+        # Get M1's teamId
+        user_doc = db.collection('users').document(uid).get()
+        team_id  = user_doc.to_dict().get('teamId', 'team_001')
+
+        # Get all members of the team
+        members_ref = db.collection('teams').document(team_id)\
+                        .collection('members').get()
+
+        members = []
+        for member in members_ref:
+            m = member.to_dict()
+            members.append({
+                "uid":         m.get('uid'),
+                "email":       m.get('email'),
+                "displayName": m.get('displayName', m.get('email', ''))
+            })
+
+        return jsonify({"members": members, "total": len(members)})
+
+    except Exception as e:
+        print(f"Error fetching team members: {e}")
+        return jsonify({"error": str(e)}), 500
