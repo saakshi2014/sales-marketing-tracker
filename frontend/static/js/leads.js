@@ -24,7 +24,7 @@ const STAGE_COLORS = {
 let allLeads   = [];
 let allStages  = [];
 let currentFilter = 'all';
-
+let showArchived  = false;
 
 // ── FETCH ALL STAGES ──────────────────────────────────────────────────────────
 async function fetchStages() {
@@ -67,8 +67,12 @@ async function fetchLeads() {
 
         if (response.ok) {
             allLeads = data.leads;
+            // Filter archived by default
+            const visibleLeads = showArchived
+                ? data.leads
+                : data.leads.filter(l => !l.isArchived);
             updateStatsBar(data.total, data.activeCount);
-            renderLeadsTable(allLeads);
+            renderLeadsTable(visibleLeads);
         } else {
             showTableError(data.error || 'Failed to load leads');
         }
@@ -118,24 +122,43 @@ function renderLeadsTable(leads) {
             : '';
 
         return `
-            <tr style="cursor:pointer;">
+            <tr style="cursor:pointer;"
+                onclick="openLeadDetail('${lead.leadId}')">
                 <td class="fw-semibold">${escapeHtml(lead.name)}</td>
                 <td class="text-muted">${escapeHtml(lead.company || '—')}</td>
                 <td class="text-muted small">${escapeHtml(lead.email || '—')}</td>
                 <td>${stageBadge}</td>
                 <td class="text-muted small">${lead.createdAt}</td>
-                <td>
+                <td onclick="event.stopPropagation()">
                     <div class="d-flex gap-1">
                         ${linkedinBtn}
+                        <button class="btn btn-sm btn-outline-primary py-0 px-2"
+                                onclick="openEditLead('${lead.leadId}')"
+                                title="Edit Lead">
+                            <i class="bi bi-pencil"></i>
+                        </button>
                         <button class="btn btn-sm btn-outline-secondary py-0 px-2"
-                                onclick="openChangeStage('${lead.leadId}', '${lead.currentStage}', '${escapeHtml(lead.name)}')"
+                                onclick="openChangeStage(
+                                    '${lead.leadId}',
+                                    '${lead.currentStage}',
+                                    '${escapeHtml(lead.name)}')"
                                 title="Change Stage">
                             <i class="bi bi-arrow-left-right"></i>
                         </button>
                         <button class="btn btn-sm btn-outline-info py-0 px-2"
-                                onclick="openHistory('${lead.leadId}', '${escapeHtml(lead.name)}')"
+                                onclick="openHistory(
+                                    '${lead.leadId}',
+                                    '${escapeHtml(lead.name)}')"
                                 title="View History">
                             <i class="bi bi-clock-history"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning py-0 px-2"
+                                onclick="toggleArchive(
+                                    '${lead.leadId}',
+                                    ${!lead.isArchived})"
+                                title="${lead.isArchived
+                                    ? 'Unarchive' : 'Archive'}">
+                            <i class="bi bi-archive"></i>
                         </button>
                     </div>
                 </td>
@@ -389,7 +412,246 @@ function showToast(message, type = 'success') {
     const bsToast = new bootstrap.Toast(toast, { delay: 3000 });
     bsToast.show();
 }
+// ── EDIT LEAD ─────────────────────────────────────────────────────────────────
+function openEditLead(leadId) {
+    // Find the lead from our cached data
+    const lead = allLeads.find(l => l.leadId === leadId);
+    if (!lead) return;
 
+    // Fill the edit form
+    document.getElementById('editLeadId').value          = leadId;
+    document.getElementById('editLeadName').value        = lead.name || '';
+    document.getElementById('editLeadCompany').value     = lead.company || '';
+    document.getElementById('editLeadEmail').value       = lead.email || '';
+    document.getElementById('editLeadPhone').value       = lead.phone || '';
+    document.getElementById('editLeadLinkedin').value    = lead.linkedinUrl || '';
+
+    // Clear error
+    document.getElementById('editLeadError').classList.add('d-none');
+
+    // Open modal
+    const modal = new bootstrap.Modal(
+        document.getElementById('editLeadModal')
+    );
+    modal.show();
+}
+
+
+async function submitEditLead() {
+    const leadId      = document.getElementById('editLeadId').value;
+    const name        = document.getElementById('editLeadName').value.trim();
+    const company     = document.getElementById('editLeadCompany').value.trim();
+    const email       = document.getElementById('editLeadEmail').value.trim();
+    const phone       = document.getElementById('editLeadPhone').value.trim();
+    const linkedinUrl = document.getElementById('editLeadLinkedin').value.trim();
+    const errorEl     = document.getElementById('editLeadError');
+
+    if (!name) {
+        errorEl.textContent = 'Lead name is required.';
+        errorEl.classList.remove('d-none');
+        return;
+    }
+
+    errorEl.classList.add('d-none');
+
+    const submitBtn       = document.getElementById('submitEditLead');
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Saving...';
+
+    try {
+        const response = await fetch(`/api/leads/${leadId}`, {
+            method:  'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ name, company, email, phone, linkedinUrl })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            const modal = bootstrap.Modal.getInstance(
+                document.getElementById('editLeadModal')
+            );
+            modal.hide();
+            await fetchLeads();
+            showToast('Lead updated successfully!', 'success');
+        } else {
+            errorEl.textContent = data.error || 'Failed to update lead.';
+            errorEl.classList.remove('d-none');
+        }
+    } catch (error) {
+        errorEl.textContent = 'Network error. Please try again.';
+        errorEl.classList.remove('d-none');
+    } finally {
+        submitBtn.disabled    = false;
+        submitBtn.textContent = 'Save Changes';
+    }
+}
+
+
+// ── ARCHIVE LEAD ──────────────────────────────────────────────────────────────
+async function toggleArchive(leadId, archive) {
+    const action = archive ? 'archive' : 'unarchive';
+    if (!confirm(`Are you sure you want to ${action} this lead?`)) return;
+
+    try {
+        const response = await fetch(`/api/leads/${leadId}/archive`, {
+            method:  'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ archive })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            await fetchLeads();
+            showToast(
+                archive ? 'Lead archived.' : 'Lead unarchived.',
+                archive ? 'warning' : 'success'
+            );
+        } else {
+            alert(data.error || 'Failed to update lead.');
+        }
+    } catch (error) {
+        alert('Network error. Please try again.');
+    }
+}
+
+
+// ── LEAD DETAIL PANEL ─────────────────────────────────────────────────────────
+async function openLeadDetail(leadId) {
+    const panel = document.getElementById('leadDetailPanel');
+    if (!panel) return;
+
+    panel.classList.remove('d-none');
+    document.getElementById('detailContent').innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary spinner-border-sm"></div>
+            <p class="mt-2 text-muted small">Loading...</p>
+        </div>`;
+
+    try {
+        const response = await fetch(`/api/leads/${leadId}`);
+        const lead     = await response.json();
+
+        if (!response.ok) {
+            document.getElementById('detailContent').innerHTML =
+                '<p class="text-danger small">Failed to load lead details.</p>';
+            return;
+        }
+
+        const color = STAGE_COLORS[lead.currentStage]
+                   || { bg: "#F5F5F5", text: "#616161" };
+
+        document.getElementById('detailContent').innerHTML = `
+            <div class="mb-3">
+                <h6 class="fw-bold text-dark mb-1">${escapeHtml(lead.name)}</h6>
+                <span style="
+                    background:${color.bg};
+                    color:${color.text};
+                    padding:3px 10px;
+                    border-radius:10px;
+                    font-size:0.75rem;
+                    font-weight:600;">
+                    ${escapeHtml(lead.stageName)}
+                </span>
+            </div>
+
+            <div class="mb-3">
+                <table class="table table-sm table-borderless mb-0">
+                    <tr>
+                        <td class="text-muted small fw-semibold ps-0"
+                            style="width:35%">Company</td>
+                        <td class="small">
+                            ${escapeHtml(lead.company || '—')}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted small fw-semibold ps-0">Email</td>
+                        <td class="small">
+                            ${lead.email
+                                ? `<a href="mailto:${escapeHtml(lead.email)}"
+                                      class="text-decoration-none">
+                                       ${escapeHtml(lead.email)}
+                                   </a>`
+                                : '—'}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted small fw-semibold ps-0">Phone</td>
+                        <td class="small">
+                            ${escapeHtml(lead.phone || '—')}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted small fw-semibold ps-0">LinkedIn</td>
+                        <td class="small">
+                            ${lead.linkedinUrl
+                                ? `<a href="${escapeHtml(lead.linkedinUrl)}"
+                                      target="_blank"
+                                      class="text-decoration-none">
+                                       View Profile
+                                       <i class="bi bi-box-arrow-up-right ms-1"></i>
+                                   </a>`
+                                : '—'}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted small fw-semibold ps-0">Status</td>
+                        <td class="small">
+                            ${lead.isArchived
+                                ? '<span class="badge bg-secondary">Archived</span>'
+                                : '<span class="badge bg-success">Active</span>'}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-sm btn-outline-primary"
+                        onclick="openEditLead('${lead.leadId}')">
+                    <i class="bi bi-pencil me-1"></i>Edit
+                </button>
+                <button class="btn btn-sm btn-outline-secondary"
+                        onclick="openChangeStage(
+                            '${lead.leadId}',
+                            '${lead.currentStage}',
+                            '${escapeHtml(lead.name)}')">
+                    <i class="bi bi-arrow-left-right me-1"></i>Stage
+                </button>
+                <button class="btn btn-sm btn-outline-warning"
+                        onclick="toggleArchive(
+                            '${lead.leadId}',
+                            ${!lead.isArchived})">
+                    <i class="bi bi-archive me-1"></i>
+                    ${lead.isArchived ? 'Unarchive' : 'Archive'}
+                </button>
+            </div>`;
+
+    } catch (error) {
+        document.getElementById('detailContent').innerHTML =
+            '<p class="text-danger small">Network error.</p>';
+    }
+}
+
+
+function closeLeadDetail() {
+    const panel = document.getElementById('leadDetailPanel');
+    if (panel) panel.classList.add('d-none');
+}
+
+// ── TOGGLE SHOW ARCHIVED ──────────────────────────────────────────────────────
+function toggleShowArchived() {
+    showArchived = !showArchived;
+    const btn = document.getElementById('archiveToggleBtn');
+    if (btn) {
+        btn.classList.toggle('btn-outline-warning', !showArchived);
+        btn.classList.toggle('btn-warning',          showArchived);
+    }
+    const visibleLeads = showArchived
+        ? allLeads
+        : allLeads.filter(l => !l.isArchived);
+    renderLeadsTable(visibleLeads);
+}
 
 // ── INITIALISE ON PAGE LOAD ───────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {

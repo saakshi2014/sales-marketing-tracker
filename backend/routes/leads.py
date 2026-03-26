@@ -387,3 +387,138 @@ def get_team_members():
     except Exception as e:
         print(f"Error fetching team members: {e}")
         return jsonify({"error": str(e)}), 500
+    # ── ROUTE 7: Delete a lead ─────────────────────────────────────────────────────
+@leads_bp.route('/api/leads/<lead_id>', methods=['DELETE'])
+def delete_lead(lead_id):
+    """
+    Permanently deletes a lead and its audit logs.
+    Only M1 Managers and M2 Managers can delete leads.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    role = session['role']
+    if role not in ['m1_manager', 'm2_manager']:
+        return jsonify({"error": "Only managers can delete leads"}), 403
+
+    try:
+        db       = get_firestore_client()
+        lead_ref = db.collection('leads').document(lead_id)
+        lead_doc = lead_ref.get()
+
+        if not lead_doc.exists:
+            return jsonify({"error": "Lead not found"}), 404
+
+        # Delete all audit logs for this lead
+        logs = db.collection('audit_logs')\
+                 .where('leadId', '==', lead_id).get()
+        for log in logs:
+            log.reference.delete()
+
+        # Delete the lead itself
+        lead_ref.delete()
+
+        return jsonify({"message": "Lead deleted successfully"})
+
+    except Exception as e:
+        print(f"Error deleting lead: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── ROUTE 8: Archive / Unarchive a lead ───────────────────────────────────────
+@leads_bp.route('/api/leads/<lead_id>/archive', methods=['PATCH'])
+def toggle_archive(lead_id):
+    """
+    Toggles the archived status of a lead.
+    Archived leads are excluded from active pipeline counts.
+
+    Request body: { "archive": true } or { "archive": false }
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    data    = request.get_json()
+    archive = data.get('archive', True) if data else True
+
+    try:
+        db       = get_firestore_client()
+        lead_ref = db.collection('leads').document(lead_id)
+        lead_doc = lead_ref.get()
+
+        if not lead_doc.exists:
+            return jsonify({"error": "Lead not found"}), 404
+
+        lead_ref.update({
+            "isArchived": archive,
+            "updatedAt":  firestore.SERVER_TIMESTAMP
+        })
+
+        # Write audit log for archive action
+        log_id = str(uuid.uuid4())
+        db.collection('audit_logs').document(log_id).set({
+            "logId":       log_id,
+            "leadId":      lead_id,
+            "employeeUid": session['uid'],
+            "fromStage":   lead_doc.to_dict().get('currentStage'),
+            "toStage":     lead_doc.to_dict().get('currentStage'),
+            "changedAt":   firestore.SERVER_TIMESTAMP,
+            "notes":       "Lead archived" if archive else "Lead unarchived"
+        })
+
+        return jsonify({
+            "message":    "Lead archived" if archive else "Lead unarchived",
+            "isArchived": archive
+        })
+
+    except Exception as e:
+        print(f"Error toggling archive: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── ROUTE 9: Get single lead details ──────────────────────────────────────────
+@leads_bp.route('/api/leads/<lead_id>', methods=['GET'])
+def get_lead(lead_id):
+    """
+    Returns full details of a single lead.
+    Used by the lead detail panel.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    try:
+        db       = get_firestore_client()
+        lead_doc = db.collection('leads').document(lead_id).get()
+
+        if not lead_doc.exists:
+            return jsonify({"error": "Lead not found"}), 404
+
+        lead = lead_doc.to_dict()
+
+        # Resolve stage name
+        stages_ref = db.collection('pipeline_stages').get()
+        stages_map = {s.to_dict()['stageId']: s.to_dict()['stageName']
+                      for s in stages_ref}
+
+        current_stage_id   = lead.get('currentStage', 'stage_1_1')
+        current_stage_name = stages_map.get(current_stage_id, 'Unknown')
+
+        return jsonify({
+            "leadId":       lead.get('leadId'),
+            "name":         lead.get('name'),
+            "company":      lead.get('company', ''),
+            "email":        lead.get('email', ''),
+            "phone":        lead.get('phone', ''),
+            "linkedinUrl":  lead.get('linkedinUrl', ''),
+            "currentStage": current_stage_id,
+            "stageName":    current_stage_name,
+            "isArchived":   lead.get('isArchived', False),
+            "employeeUid":  lead.get('employeeUid'),
+            "teamId":       lead.get('teamId'),
+        })
+
+    except Exception as e:
+        print(f"Error fetching lead: {e}")
+        return jsonify({"error": str(e)}), 500
