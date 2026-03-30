@@ -522,3 +522,238 @@ def get_lead(lead_id):
     except Exception as e:
         print(f"Error fetching lead: {e}")
         return jsonify({"error": str(e)}), 500
+    
+    # ── ROUTE 10: Get org-wide summary (M2 only) ──────────────────────────────────
+@leads_bp.route('/api/org/summary', methods=['GET'])
+def get_org_summary():
+    """
+    Returns organisation-wide summary for M2 Manager.
+    Includes total leads, active leads, meetings scheduled/completed,
+    and per-team breakdown.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    if session['role'] != 'm2_manager':
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        db = get_firestore_client()
+
+        # Fetch all leads
+        all_leads = db.collection('leads').get()
+        leads_data = [l.to_dict() for l in all_leads]
+
+        # Fetch all teams
+        all_teams = db.collection('teams').get()
+        teams_map = {}
+        for team in all_teams:
+            t = team.to_dict()
+            teams_map[t['teamId']] = t['teamName']
+
+        # Fetch all users for name resolution
+        all_users = db.collection('users').get()
+        users_map = {}
+        for user in all_users:
+            u = user.to_dict()
+            users_map[u['uid']] = u.get('displayName', u.get('email', ''))
+
+        # Fetch all pipeline stages
+        stages_ref = db.collection('pipeline_stages').get()
+        stages_map = {}
+        for stage in stages_ref:
+            s = stage.to_dict()
+            stages_map[s['stageId']] = s['stageName']
+
+        # Calculate org-wide stats
+        total_leads       = len(leads_data)
+        active_leads      = sum(1 for l in leads_data if not l.get('isArchived'))
+        meetings_scheduled = sum(
+            1 for l in leads_data if l.get('currentStage') == 'stage_7'
+        )
+        meetings_completed = sum(
+            1 for l in leads_data if l.get('currentStage') == 'stage_8'
+        )
+        interested_leads  = sum(
+            1 for l in leads_data if l.get('currentStage') == 'stage_6_1'
+        )
+        warm_leads        = sum(
+            1 for l in leads_data if l.get('currentStage') == 'stage_6_3'
+        )
+
+        # Per-team breakdown
+        team_breakdown = {}
+        for lead in leads_data:
+            team_id = lead.get('teamId', 'unknown')
+            if team_id not in team_breakdown:
+                team_breakdown[team_id] = {
+                    "teamId":            team_id,
+                    "teamName":          teams_map.get(team_id, 'Unknown Team'),
+                    "totalLeads":        0,
+                    "activeLeads":       0,
+                    "meetingsScheduled": 0,
+                    "meetingsCompleted": 0,
+                    "interestedLeads":   0,
+                }
+            team_breakdown[team_id]['totalLeads'] += 1
+            if not lead.get('isArchived'):
+                team_breakdown[team_id]['activeLeads'] += 1
+            if lead.get('currentStage') == 'stage_7':
+                team_breakdown[team_id]['meetingsScheduled'] += 1
+            if lead.get('currentStage') == 'stage_8':
+                team_breakdown[team_id]['meetingsCompleted'] += 1
+            if lead.get('currentStage') == 'stage_6_1':
+                team_breakdown[team_id]['interestedLeads'] += 1
+
+        # Stage distribution across whole org
+        stage_counts = {}
+        for lead in leads_data:
+            sid = lead.get('currentStage', 'stage_1_1')
+            stage_counts[sid] = stage_counts.get(sid, 0) + 1
+
+        stage_distribution = [
+            {
+                "stageId":   sid,
+                "stageName": stages_map.get(sid, 'Unknown'),
+                "count":     count
+            }
+            for sid, count in stage_counts.items()
+        ]
+
+        return jsonify({
+            "orgStats": {
+                "totalLeads":        total_leads,
+                "activeLeads":       active_leads,
+                "meetingsScheduled": meetings_scheduled,
+                "meetingsCompleted": meetings_completed,
+                "interestedLeads":   interested_leads,
+                "warmLeads":         warm_leads,
+                "archivedLeads":     total_leads - active_leads,
+            },
+            "teamBreakdown":    list(team_breakdown.values()),
+            "stageDistribution": stage_distribution,
+            "totalTeams":        len(team_breakdown),
+        })
+
+    except Exception as e:
+        print(f"Error fetching org summary: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── ROUTE 11: Get all leads for a specific team (M2 drill-down) ───────────────
+@leads_bp.route('/api/org/teams/<team_id>/leads', methods=['GET'])
+def get_team_leads_m2(team_id):
+    """
+    Returns all leads for a specific team.
+    Used by M2 Manager when drilling down into a specific team.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    if session['role'] != 'm2_manager':
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        db = get_firestore_client()
+
+        # Fetch leads for this team
+        leads_ref = db.collection('leads')\
+                      .where('teamId', '==', team_id).get()
+
+        # Fetch stage names
+        stages_ref = db.collection('pipeline_stages').get()
+        stages_map = {s.to_dict()['stageId']: s.to_dict()['stageName']
+                      for s in stages_ref}
+
+        # Fetch user names
+        users_ref  = db.collection('users').get()
+        users_map  = {u.to_dict()['uid']: u.to_dict().get(
+                          'displayName', u.to_dict().get('email', ''))
+                      for u in users_ref}
+
+        leads_list = []
+        for lead_doc in leads_ref:
+            lead = lead_doc.to_dict()
+            current_stage_id   = lead.get('currentStage', 'stage_1_1')
+            current_stage_name = stages_map.get(current_stage_id, 'Unknown')
+            employee_name      = users_map.get(
+                lead.get('employeeUid', ''), 'Unknown'
+            )
+
+            created_at = lead.get('createdAt')
+            if hasattr(created_at, 'strftime'):
+                created_at = created_at.strftime('%d %b %Y')
+            else:
+                created_at = 'Recently'
+
+            leads_list.append({
+                "leadId":       lead.get('leadId'),
+                "name":         lead.get('name'),
+                "company":      lead.get('company', '—'),
+                "email":        lead.get('email', '—'),
+                "currentStage": current_stage_id,
+                "stageName":    current_stage_name,
+                "isArchived":   lead.get('isArchived', False),
+                "employeeUid":  lead.get('employeeUid'),
+                "employeeName": employee_name,
+                "linkedinUrl":  lead.get('linkedinUrl', ''),
+                "createdAt":    created_at,
+            })
+
+        leads_list.sort(key=lambda x: x['leadId'], reverse=True)
+
+        return jsonify({
+            "leads":  leads_list,
+            "total":  len(leads_list),
+            "teamId": team_id,
+        })
+
+    except Exception as e:
+        print(f"Error fetching team leads for M2: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── ROUTE 12: Get all teams (M2 only) ─────────────────────────────────────────
+@leads_bp.route('/api/org/teams', methods=['GET'])
+def get_all_teams():
+    """
+    Returns all teams in the organisation.
+    Used by M2 Manager dashboard.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    if session['role'] != 'm2_manager':
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        db        = get_firestore_client()
+        teams_ref = db.collection('teams').get()
+
+        # Fetch all users for M1 name resolution
+        users_ref = db.collection('users').get()
+        users_map = {u.to_dict()['uid']: u.to_dict().get(
+                         'displayName', u.to_dict().get('email', ''))
+                     for u in users_ref}
+
+        teams = []
+        for team_doc in teams_ref:
+            team = team_doc.to_dict()
+            m1_name = users_map.get(
+                team.get('m1ManagerUid', ''), 'Unknown M1'
+            )
+            teams.append({
+                "teamId":   team.get('teamId'),
+                "teamName": team.get('teamName'),
+                "m1Name":   m1_name,
+                "isActive": team.get('isActive', True),
+            })
+
+        return jsonify({"teams": teams, "total": len(teams)})
+
+    except Exception as e:
+        print(f"Error fetching teams: {e}")
+        return jsonify({"error": str(e)}), 500
