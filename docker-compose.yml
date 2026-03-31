@@ -1,5 +1,4 @@
 services:
-
   backend:
     build:
       context: .
@@ -8,11 +7,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./backend:/app/backend
-      - ./frontend:/app/frontend
+      - .:/app
     env_file:
       - .env
-    environment:
-      - FLASK_ENV=development
-      - FLASK_DEBUG=1
     restart: unless-stopped

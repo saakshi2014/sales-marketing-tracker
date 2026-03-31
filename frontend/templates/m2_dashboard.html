@@ -3,22 +3,17 @@
 {% block title %}Organisation Overview — M2 Manager{% endblock %}
 
 {% block sidebar %}
-<p class="text-uppercase text-secondary small fw-bold mt-2 mb-3">
-    Senior Manager Menu
-</p>
+<p class="sidebar-section-label">Senior Manager</p>
 
 <a href="/dashboard/m2"
-   class="d-block text-white text-decoration-none mb-2 py-2 px-2 rounded"
-   style="background-color: rgba(255,255,255,0.15);">
-    <i class="bi bi-building me-2"></i>Org Overview
+   class="sidebar-link active">
+    <i class="bi bi-building"></i>Org Overview
 </a>
-<a href="#"
-   class="d-block text-white-50 text-decoration-none mb-2 py-2 px-2 rounded">
-    <i class="bi bi-diagram-3 me-2"></i>All Teams
+<a href="#" class="sidebar-link">
+    <i class="bi bi-diagram-3"></i>All Teams
 </a>
-<a href="#"
-   class="d-block text-white-50 text-decoration-none mb-2 py-2 px-2 rounded">
-    <i class="bi bi-heart-pulse me-2"></i>Task Health
+<a href="#" class="sidebar-link">
+    <i class="bi bi-heart-pulse"></i>Task Health
 </a>
 {% endblock %}
 

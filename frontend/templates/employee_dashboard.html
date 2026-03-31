@@ -3,18 +3,17 @@
 {% block title %}My Pipeline — Employee{% endblock %}
 
 {% block sidebar %}
-<p class="text-uppercase text-secondary small fw-bold mt-2 mb-3">My Menu</p>
+<p class="sidebar-section-label">My Menu</p>
 
 <a href="/dashboard/employee"
-   class="d-block text-white text-decoration-none mb-2 py-2 px-2 rounded"
-   style="background-color: rgba(255,255,255,0.15);">
-    <i class="bi bi-funnel me-2"></i>My Pipeline
+   class="sidebar-link active">
+    <i class="bi bi-funnel"></i>My Pipeline
 </a>
-<a href="#" class="d-block text-white-50 text-decoration-none mb-2 py-2 px-2 rounded">
-    <i class="bi bi-check2-square me-2"></i>My Tasks
+<a href="#" class="sidebar-link">
+    <i class="bi bi-check2-square"></i>My Tasks
 </a>
-<a href="#" class="d-block text-white-50 text-decoration-none mb-2 py-2 px-2 rounded">
-    <i class="bi bi-graph-up me-2"></i>My KPIs
+<a href="#" class="sidebar-link">
+    <i class="bi bi-graph-up"></i>My KPIs
 </a>
 {% endblock %}
 

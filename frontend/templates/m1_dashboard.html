@@ -3,22 +3,17 @@
 {% block title %}Team Pipeline — M1 Manager{% endblock %}
 
 {% block sidebar %}
-<p class="text-uppercase text-secondary small fw-bold mt-2 mb-3">
-    Manager Menu
-</p>
+<p class="sidebar-section-label">Manager Menu</p>
 
 <a href="/dashboard/m1"
-   class="d-block text-white text-decoration-none mb-2 py-2 px-2 rounded"
-   style="background-color: rgba(255,255,255,0.15);">
-    <i class="bi bi-people me-2"></i>Team Pipeline
+   class="sidebar-link active">
+    <i class="bi bi-people"></i>Team Pipeline
 </a>
-<a href="#"
-   class="d-block text-white-50 text-decoration-none mb-2 py-2 px-2 rounded">
-    <i class="bi bi-clipboard-check me-2"></i>Assign Tasks
+<a href="#" class="sidebar-link">
+    <i class="bi bi-clipboard-check"></i>Assign Tasks
 </a>
-<a href="#"
-   class="d-block text-white-50 text-decoration-none mb-2 py-2 px-2 rounded">
-    <i class="bi bi-bar-chart me-2"></i>Team KPIs
+<a href="#" class="sidebar-link">
+    <i class="bi bi-bar-chart"></i>Team KPIs
 </a>
 {% endblock %}
 
