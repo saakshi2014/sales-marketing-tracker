@@ -77,12 +77,7 @@
 </div>
 
 <!-- ── MOBILE SIDEBAR OVERLAY ─────────────────────────────────────────────── -->
-<div id="sidebarOverlay"
-     class="d-none"
-     style="position:fixed; top:0; left:0; width:100%; height:100%;
-            background:rgba(0,0,0,0.5); z-index:999;"
-     onclick="toggleMobileSidebar()">
-</div>
+<div id="sidebarOverlay" style="display:none;"></div>
 
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js">
@@ -94,70 +89,88 @@
 <!-- Mobile sidebar toggle script -->
 <script>
 // ── MOBILE SIDEBAR TOGGLE ─────────────────────────────────────────────────
-const sidebar        = document.getElementById('mainSidebar');
-const overlay        = document.getElementById('sidebarOverlay');
-const sidebarToggle  = document.getElementById('sidebarToggle');
-let   sidebarOpen    = false;
+let sidebarOpen = false;
 
 function toggleMobileSidebar() {
     sidebarOpen = !sidebarOpen;
 
+    const sidebar       = document.getElementById('mainSidebar');
+    const overlay       = document.getElementById('sidebarOverlay');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+
     if (sidebarOpen) {
-        // Open sidebar
-        sidebar.style.cssText = `
-            display:   block !important;
-            position:  fixed !important;
-            top:       56px !important;
-            left:      0 !important;
-            z-index:   1050 !important;
-            width:     220px !important;
-            height:    calc(100vh - 56px) !important;
-            overflow-y: auto !important;
-        `;
-        overlay.classList.remove('d-none');
+        sidebar.setAttribute('style',
+            'display: block !important; ' +
+            'position: fixed !important; ' +
+            'top: 56px !important; ' +
+            'left: 0 !important; ' +
+            'z-index: 1050 !important; ' +
+            'width: 220px !important; ' +
+            'min-width: 220px !important; ' +
+            'height: calc(100vh - 56px) !important; ' +
+            'overflow-y: auto !important; ' +
+            'background: #1A2332 !important;'
+        );
+        overlay.setAttribute('style',
+            'display: block !important; ' +
+            'position: fixed !important; ' +
+            'top: 0 !important; ' +
+            'left: 0 !important; ' +
+            'width: 100% !important; ' +
+            'height: 100% !important; ' +
+            'background: rgba(0,0,0,0.5) !important; ' +
+            'z-index: 999 !important;'
+        );
         document.body.style.overflow = 'hidden';
         if (sidebarToggle) {
             sidebarToggle.innerHTML = '<i class="bi bi-x-lg"></i>';
         }
     } else {
-        // Close sidebar
         closeMobileSidebar();
     }
 }
 
 function closeMobileSidebar() {
-    sidebarOpen         = false;
-    sidebar.style.cssText = '';
-    overlay.classList.add('d-none');
+    sidebarOpen = false;
+    const sidebar       = document.getElementById('mainSidebar');
+    const overlay       = document.getElementById('sidebarOverlay');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+
+    sidebar.removeAttribute('style');
+    overlay.setAttribute('style', 'display: none !important;');
     document.body.style.overflow = '';
+
     if (sidebarToggle) {
         sidebarToggle.innerHTML = '<i class="bi bi-list"></i>';
     }
 }
 
 // Close when overlay is clicked
-if (overlay) {
-    overlay.addEventListener('click', closeMobileSidebar);
-}
+document.addEventListener('DOMContentLoaded', function() {
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay) {
+        overlay.addEventListener('click', closeMobileSidebar);
+    }
 
-// Close sidebar when window resizes to desktop
-window.addEventListener('resize', () => {
-    if (window.innerWidth >= 768) {
-        closeMobileSidebar();
-        sidebar.style.cssText = '';
+    // Close sidebar links on mobile
+    const sidebar = document.getElementById('mainSidebar');
+    if (sidebar) {
+        const links = sidebar.querySelectorAll('a');
+        links.forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth < 768) {
+                    closeMobileSidebar();
+                }
+            });
+        });
     }
 });
 
-// Close sidebar when a sidebar link is clicked on mobile
-document.addEventListener('DOMContentLoaded', () => {
-    const sidebarLinks = sidebar.querySelectorAll('a');
-    sidebarLinks.forEach(link => {
-        link.addEventListener('click', () => {
-            if (window.innerWidth < 768) {
-                closeMobileSidebar();
-            }
-        });
-    });
+// Close sidebar on resize to desktop
+window.addEventListener('resize', () => {
+    if (window.innerWidth >= 768) {
+        closeMobileSidebar();
+    }
 });
 </script>
 {% block scripts %}{% endblock %}
