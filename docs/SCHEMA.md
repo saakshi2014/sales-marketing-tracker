@@ -138,3 +138,39 @@ fields:
 - createdAt:     timestamp
 - completedAt:   timestamp — null until completed
 ```
+---
+
+## tasks/{taskId}
+
+Document ID = auto-generated UUID
+
+fields:
+- taskId:          string   — auto-generated UUID
+- title:           string   — task title
+- description:     string   — detailed description
+- assignedToUid:   string   — employee UID who must complete this
+- assignedToName:  string   — employee display name (denormalised)
+- assignedByUid:   string   — M1 or M2 UID who created this task
+- assignedByRole:  string   — m1_manager | m2_manager
+- teamId:          string   — team this task belongs to
+- dueDate:         timestamp — when this task must be completed
+- priority:        string   — low | medium | high
+- status:          string   — pending | in_progress | completed | overdue
+- createdAt:       timestamp
+- completedAt:     timestamp — null until completed
+- isDeleted:       boolean  — soft delete flag
+
+---
+
+## notifications/{notifId}
+
+Document ID = auto-generated UUID
+
+fields:
+- notifId:      string   — auto-generated UUID
+- recipientUid: string   — UID of user who receives this notification
+- message:      string   — notification text
+- type:         string   — task_assigned | task_completed | task_overdue
+- relatedId:    string   — taskId this notification is about
+- isRead:       boolean  — false = unread, true = read
+- createdAt:    timestamp
