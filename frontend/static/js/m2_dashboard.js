@@ -476,3 +476,195 @@ document.addEventListener('DOMContentLoaded', async () => {
         drillSearch.addEventListener('input', filterDrillTable);
     }
 });
+// ── M2 TAB SWITCHER ───────────────────────────────────────────────────────────
+function switchM2Tab(tab) {
+    const orgView      = document.getElementById('orgView');
+    const tasksContent = document.getElementById('m2TasksContent');
+    const orgTab       = document.getElementById('m2OrgTab');
+    const tasksTab     = document.getElementById('m2TasksTab');
+
+    if (tab === 'org') {
+        orgView.classList.remove('d-none');
+        tasksContent.classList.add('d-none');
+        orgTab.classList.add('active');
+        tasksTab.classList.remove('active');
+    } else {
+        orgView.classList.add('d-none');
+        tasksContent.classList.remove('d-none');
+        orgTab.classList.remove('active');
+        tasksTab.classList.add('active');
+        fetchTaskStats();
+    }
+}
+
+
+// ── FETCH TASK STATS ──────────────────────────────────────────────────────────
+async function fetchTaskStats() {
+    try {
+        const response = await fetch('/api/tasks/stats');
+        const data     = await response.json();
+
+        if (response.ok) {
+            renderOrgTaskStats(data.orgCounts);
+            renderTeamTaskBreakdown(data.teamCounts);
+        } else {
+            console.error('Failed to fetch task stats:', data.error);
+        }
+    } catch (error) {
+        console.error('Error fetching task stats:', error);
+    }
+}
+
+
+// ── RENDER ORG TASK STATS ─────────────────────────────────────────────────────
+function renderOrgTaskStats(counts) {
+    const el = document.getElementById('orgTaskStats');
+    if (!el) return;
+
+    el.innerHTML = `
+        <div class="row g-2">
+            <div class="col-6 col-md-2">
+                <div class="card text-center border-0 shadow-sm h-100
+                            border-start border-primary border-3">
+                    <div class="card-body py-2">
+                        <div class="fs-3 fw-bold text-primary">
+                            ${counts.total}
+                        </div>
+                        <div class="small text-muted">Total Tasks</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="card text-center border-0 shadow-sm h-100
+                            border-start border-warning border-3">
+                    <div class="card-body py-2">
+                        <div class="fs-3 fw-bold text-warning">
+                            ${counts.pending}
+                        </div>
+                        <div class="small text-muted">Pending</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="card text-center border-0 shadow-sm h-100
+                            border-start border-info border-3">
+                    <div class="card-body py-2">
+                        <div class="fs-3 fw-bold text-info">
+                            ${counts.in_progress}
+                        </div>
+                        <div class="small text-muted">In Progress</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="card text-center border-0 shadow-sm h-100
+                            border-start border-success border-3">
+                    <div class="card-body py-2">
+                        <div class="fs-3 fw-bold text-success">
+                            ${counts.completed}
+                        </div>
+                        <div class="small text-muted">Completed</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="card text-center border-0 shadow-sm h-100
+                            border-start border-danger border-3">
+                    <div class="card-body py-2">
+                        <div class="fs-3 fw-bold text-danger">
+                            ${counts.overdue}
+                        </div>
+                        <div class="small text-muted">Overdue</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="card text-center border-0 shadow-sm h-100
+                            border-start border-secondary border-3">
+                    <div class="card-body py-2">
+                        <div class="fs-3 fw-bold text-secondary">
+                            ${counts.total > 0
+                                ? Math.round((counts.completed/counts.total)*100)
+                                : 0}%
+                        </div>
+                        <div class="small text-muted">Completion</div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+}
+
+
+// ── RENDER TEAM TASK BREAKDOWN ────────────────────────────────────────────────
+function renderTeamTaskBreakdown(teams) {
+    const el = document.getElementById('teamTaskBreakdown');
+    if (!el) return;
+
+    if (teams.length === 0) {
+        el.innerHTML =
+            '<p class="text-muted text-center py-3">No task data yet.</p>';
+        return;
+    }
+
+    el.innerHTML = `
+        <div class="table-responsive">
+            <table class="table table-hover shadow-sm">
+                <thead class="table-light">
+                    <tr>
+                        <th>Team</th>
+                        <th class="text-center">Total</th>
+                        <th class="text-center">Pending</th>
+                        <th class="text-center">In Progress</th>
+                        <th class="text-center">Completed</th>
+                        <th class="text-center">Overdue</th>
+                        <th>Health</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${teams.map(team => {
+                        const completion = team.total > 0
+                            ? Math.round((team.completed/team.total)*100) : 0;
+                        const health = team.overdue > 0
+                            ? 'danger' : completion >= 70
+                            ? 'success' : 'warning';
+                        return `
+                            <tr>
+                                <td class="fw-semibold">
+                                    ${escapeHtml(team.teamName)}
+                                </td>
+                                <td class="text-center">${team.total}</td>
+                                <td class="text-center text-warning">
+                                    ${team.pending}
+                                </td>
+                                <td class="text-center text-info">
+                                    ${team.in_progress}
+                                </td>
+                                <td class="text-center text-success">
+                                    ${team.completed}
+                                </td>
+                                <td class="text-center">
+                                    <span class="fw-bold
+                                        ${team.overdue > 0
+                                            ? 'text-danger' : 'text-muted'}">
+                                        ${team.overdue}
+                                    </span>
+                                </td>
+                                <td style="min-width:120px;">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="progress flex-grow-1"
+                                             style="height:8px;">
+                                            <div class="progress-bar bg-${health}"
+                                                 style="width:${completion}%">
+                                            </div>
+                                        </div>
+                                        <span class="small text-muted">
+                                            ${completion}%
+                                        </span>
+                                    </div>
+                                </td>
+                            </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>`;
+}

@@ -9,8 +9,10 @@
    class="sidebar-link active">
     <i class="bi bi-funnel"></i>My Pipeline
 </a>
-<a href="#" class="sidebar-link">
+<a href="#" class="sidebar-link" id="tasksTabLink"
+   onclick="switchTab('tasks')">
     <i class="bi bi-check2-square"></i>My Tasks
+    <span id="tasksBadge" class="badge bg-danger ms-1 d-none">0</span>
 </a>
 <a href="#" class="sidebar-link">
     <i class="bi bi-graph-up"></i>My KPIs
@@ -19,109 +21,223 @@
 
 {% block content %}
 
-<!-- Page Header -->
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <h4 class="fw-bold text-primary mb-1">
+<!-- Tab Navigation -->
+<ul class="nav nav-tabs mb-3" id="employeeTabs">
+    <li class="nav-item">
+        <a class="nav-link active" id="pipelineTab"
+           onclick="switchTab('pipeline')" href="#">
             <i class="bi bi-funnel me-2"></i>My Pipeline
-        </h4>
-        <p class="text-muted mb-0 small">View and manage your leads</p>
-    </div>
-    <button class="btn btn-primary"
-            data-bs-toggle="modal" data-bs-target="#addLeadModal">
-        <i class="bi bi-plus-lg me-2"></i>Add Lead
-    </button>
-</div>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" id="tasksTab"
+           onclick="switchTab('tasks')" href="#">
+            <i class="bi bi-check2-square me-2"></i>My Tasks
+            <span id="overdueTasksBadge" class="badge bg-danger ms-1 d-none">
+            </span>
+        </a>
+    </li>
+</ul>
 
-<!-- Stats Bar -->
-<div id="statsBar" class="mb-3">
-    <div class="d-flex gap-3">
-        <span class="badge bg-secondary fs-6 px-3 py-2">Loading...</span>
-    </div>
-</div>
+<!-- ══════════ PIPELINE TAB ══════════ -->
+<div id="pipelineTabContent">
 
-<!-- Search and Filter Bar -->
-<div class="card shadow-sm mb-3">
-    <div class="card-body py-2">
-        <div class="row g-2 align-items-center">
-            <div class="col-md-6">
-                <div class="input-group">
-                    <span class="input-group-text bg-light">
-                        <i class="bi bi-search text-muted"></i>
-                    </span>
-                    <input type="text" id="searchInput"
-                           class="form-control"
-                           placeholder="Search by name, company or email...">
-                </div>
-            </div>
-            <div class="col-md-4">
-                <select id="stageFilter" class="form-select">
-                    <option value="">All Stages</option>
-                </select>
-            </div>
-           <div class="col-md-2">
-                <div class="d-flex gap-2">
-                    <button class="btn btn-outline-secondary flex-grow-1"
-                            onclick="fetchLeads()">
-                        <i class="bi bi-arrow-clockwise"></i>
-                    </button>
-                    <button class="btn btn-outline-warning flex-grow-1"
-                            id="archiveToggleBtn"
-                            onclick="toggleShowArchived()"
-                            title="Show/Hide Archived">
-                        <i class="bi bi-archive"></i>
-                    </button>
-                </div>
-            </div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h4 class="fw-bold text-primary mb-1">
+                <i class="bi bi-funnel me-2"></i>My Pipeline
+            </h4>
+            <p class="text-muted mb-0 small">View and manage your leads</p>
         </div>
-    </div>
-</div>
-
-<!-- Loading Indicator -->
-<div id="tableLoading" class="text-center py-5">
-    <div class="spinner-border text-primary" role="status"></div>
-    <p class="mt-2 text-muted">Loading your leads...</p>
-</div>
-
-<!-- Leads Table -->
-<div id="leadsTable" class="card shadow-sm d-none">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Name</th>
-                        <th>Company</th>
-                        <th>Email</th>
-                        <th>Stage</th>
-                        <th>Added</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="leadsTableBody">
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-<!-- ── LEAD DETAIL PANEL ──────────────────────────────────────────────────── -->
-<div id="leadDetailPanel"
-     class="card shadow-sm d-none mt-3"
-     style="border-left: 4px solid #2E75B6;">
-    <div class="card-header bg-white d-flex justify-content-between
-                align-items-center py-2">
-        <span class="fw-semibold text-primary">
-            <i class="bi bi-person-lines-fill me-2"></i>Lead Details
-        </span>
-        <button class="btn btn-sm btn-outline-secondary"
-                onclick="closeLeadDetail()">
-            <i class="bi bi-x-lg"></i>
+        <button class="btn btn-primary"
+                data-bs-toggle="modal"
+                data-bs-target="#addLeadModal">
+            <i class="bi bi-plus-lg me-2"></i>Add Lead
         </button>
     </div>
-    <div class="card-body" id="detailContent">
-        <p class="text-muted small">Click a lead to see details.</p>
+
+    <div id="statsBar" class="mb-3">
+        <div class="d-flex gap-3">
+            <span class="badge bg-secondary fs-6 px-3 py-2">
+                Loading...
+            </span>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2 align-items-center">
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light">
+                            <i class="bi bi-search text-muted"></i>
+                        </span>
+                        <input type="text" id="searchInput"
+                               class="form-control"
+                               placeholder="Search by name, company or email...">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <select id="stageFilter" class="form-select">
+                        <option value="">All Stages</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary flex-grow-1"
+                                onclick="fetchLeads()">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                        <button class="btn btn-outline-warning flex-grow-1"
+                                id="archiveToggleBtn"
+                                onclick="toggleShowArchived()"
+                                title="Show/Hide Archived">
+                            <i class="bi bi-archive"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tableLoading" class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2 text-muted">Loading your leads...</p>
+    </div>
+
+    <div id="leadsTable" class="card shadow-sm d-none">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Name</th>
+                            <th>Company</th>
+                            <th>Email</th>
+                            <th>Stage</th>
+                            <th>Added</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leadsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lead Detail Panel -->
+    <div id="leadDetailPanel"
+         class="card shadow-sm d-none mt-3 detail-panel">
+        <div class="card-header bg-white d-flex justify-content-between
+                    align-items-center py-2">
+            <span class="fw-semibold text-primary">
+                <i class="bi bi-person-lines-fill me-2"></i>Lead Details
+            </span>
+            <button class="btn btn-sm btn-outline-secondary"
+                    onclick="closeLeadDetail()">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="card-body" id="detailContent">
+            <p class="text-muted small">Click a lead to see details.</p>
+        </div>
     </div>
 </div>
+
+<!-- ══════════ TASKS TAB ══════════ -->
+<div id="tasksTabContent" class="d-none">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h4 class="fw-bold text-primary mb-1">
+                <i class="bi bi-check2-square me-2"></i>My Tasks
+            </h4>
+            <p class="text-muted mb-0 small">
+                Tasks assigned to you by your manager
+            </p>
+        </div>
+        <button class="btn btn-outline-primary btn-sm"
+                onclick="fetchTasks()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+    </div>
+
+    <!-- Task Stats Bar -->
+    <div id="taskStatsBar" class="mb-3">
+        <div class="d-flex gap-2">
+            <span class="badge bg-secondary fs-6 px-3 py-2">
+                Loading...
+            </span>
+        </div>
+    </div>
+
+    <!-- Task Filters -->
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2">
+                <div class="col-md-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light">
+                            <i class="bi bi-search text-muted"></i>
+                        </span>
+                        <input type="text" id="taskSearch"
+                               class="form-control form-control-sm"
+                               placeholder="Search tasks...">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <select id="taskStatusFilter"
+                            class="form-select form-select-sm">
+                        <option value="">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="overdue">Overdue</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select id="taskPriorityFilter"
+                            class="form-select form-select-sm">
+                        <option value="">All Priorities</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="tasksLoading" class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2 text-muted">Loading your tasks...</p>
+    </div>
+
+    <!-- Tasks Table -->
+    <div id="tasksTableWrapper" class="card shadow-sm d-none">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Task</th>
+                            <th>Description</th>
+                            <th>Priority</th>
+                            <th>Due Date</th>
+                            <th>Assigned By</th>
+                            <th>Status</th>
+                            <th>Update</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tasksTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- All existing modals remain here (Add Lead, Change Stage, History, Edit Lead) -->
 
 <!-- ── ADD LEAD MODAL ──────────────────────────────────────────────────────── -->
 <div class="modal fade" id="addLeadModal" tabindex="-1">
@@ -135,43 +251,35 @@
                         data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-
                 <div id="addLeadError" class="alert alert-danger d-none"></div>
-
                 <form id="addLeadForm">
                     <div class="row g-3">
-
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">
                                 Full Name <span class="text-danger">*</span>
                             </label>
                             <input type="text" id="leadName"
                                    class="form-control"
-                                   placeholder="e.g. John Smith"
-                                   required>
+                                   placeholder="e.g. John Smith" required>
                         </div>
-
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Company</label>
                             <input type="text" id="leadCompany"
                                    class="form-control"
                                    placeholder="e.g. Acme Corp">
                         </div>
-
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Email</label>
                             <input type="email" id="leadEmail"
                                    class="form-control"
                                    placeholder="e.g. john@acme.com">
                         </div>
-
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Phone</label>
                             <input type="text" id="leadPhone"
                                    class="form-control"
                                    placeholder="e.g. +91 9876543210">
                         </div>
-
                         <div class="col-12">
                             <label class="form-label fw-semibold">
                                 LinkedIn URL
@@ -180,7 +288,6 @@
                                    class="form-control"
                                    placeholder="https://linkedin.com/in/username">
                         </div>
-
                         <div class="col-12">
                             <label class="form-label fw-semibold">
                                 Initial Stage
@@ -190,11 +297,7 @@
                                     1.1 — Qualified – Pending Outreach
                                 </option>
                             </select>
-                            <div class="form-text">
-                                New leads always start at Stage 1.1 by default.
-                            </div>
                         </div>
-
                     </div>
                 </form>
             </div>
@@ -227,20 +330,18 @@
                 <p class="text-muted mb-3">
                     Lead: <strong id="changeStageLeadName"></strong>
                 </p>
-
-                <div id="changeStageError" class="alert alert-danger d-none">
-                </div>
-
+                <div id="changeStageError"
+                     class="alert alert-danger d-none"></div>
                 <div class="mb-3">
                     <label class="form-label fw-semibold">New Stage</label>
                     <select id="newStageSelect" class="form-select"></select>
                 </div>
-
                 <div class="mb-3">
                     <label class="form-label fw-semibold">
                         Notes (optional)
                     </label>
-                    <textarea id="stageNotes" class="form-control" rows="2"
+                    <textarea id="stageNotes" class="form-control"
+                              rows="2"
                               placeholder="Why is this stage changing?">
                     </textarea>
                 </div>
@@ -293,47 +394,38 @@
                         data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-
                 <input type="hidden" id="editLeadId">
                 <div id="editLeadError"
                      class="alert alert-danger d-none"></div>
-
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">
                             Full Name <span class="text-danger">*</span>
                         </label>
                         <input type="text" id="editLeadName"
-                               class="form-control"
-                               placeholder="e.g. John Smith">
+                               class="form-control">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label fw-semibold">
-                            Company
-                        </label>
+                        <label class="form-label fw-semibold">Company</label>
                         <input type="text" id="editLeadCompany"
-                               class="form-control"
-                               placeholder="e.g. Acme Corp">
+                               class="form-control">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">Email</label>
                         <input type="email" id="editLeadEmail"
-                               class="form-control"
-                               placeholder="e.g. john@acme.com">
+                               class="form-control">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">Phone</label>
                         <input type="text" id="editLeadPhone"
-                               class="form-control"
-                               placeholder="e.g. +91 9876543210">
+                               class="form-control">
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">
                             LinkedIn URL
                         </label>
                         <input type="url" id="editLeadLinkedin"
-                               class="form-control"
-                               placeholder="https://linkedin.com/in/username">
+                               class="form-control">
                     </div>
                 </div>
             </div>
@@ -349,13 +441,13 @@
         </div>
     </div>
 </div>
+
 <!-- ── SUCCESS TOAST ───────────────────────────────────────────────────────── -->
-<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 9999">
-    <div id="successToast"
-         class="toast align-items-center text-white bg-success border-0"
-         role="alert">
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+    <div id="taskToast"
+         class="toast align-items-center text-white bg-success border-0">
         <div class="d-flex">
-            <div class="toast-body fw-semibold">Action successful!</div>
+            <div class="toast-body fw-semibold">Done!</div>
             <button type="button"
                     class="btn-close btn-close-white me-2 m-auto"
                     data-bs-dismiss="toast"></button>
@@ -366,18 +458,44 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/leads.js') }}"></script>
-
 <script>
-// Populate stage filter dropdown after stages load
+    window.userRole = "employee";
+</script>
+<script src="{{ url_for('static', filename='js/leads.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
+<script>
+// ── TAB SWITCHER ──────────────────────────────────────────────────────────────
+function switchTab(tab) {
+    const pipelineContent = document.getElementById('pipelineTabContent');
+    const tasksContent    = document.getElementById('tasksTabContent');
+    const pipelineTab     = document.getElementById('pipelineTab');
+    const tasksTab        = document.getElementById('tasksTab');
+
+    if (tab === 'pipeline') {
+        pipelineContent.classList.remove('d-none');
+        tasksContent.classList.add('d-none');
+        pipelineTab.classList.add('active');
+        tasksTab.classList.remove('active');
+    } else {
+        pipelineContent.classList.add('d-none');
+        tasksContent.classList.remove('d-none');
+        pipelineTab.classList.remove('active');
+        tasksTab.classList.add('active');
+        fetchTasks();
+    }
+    return false;
+}
+
+// Populate stage filter after stages load
 document.addEventListener('DOMContentLoaded', function() {
     setTimeout(() => {
         const stageFilter = document.getElementById('stageFilter');
-        if (stageFilter && allStages.length > 0) {
+        if (stageFilter && allStages && allStages.length > 0) {
             allStages.forEach(stage => {
                 const option = document.createElement('option');
                 option.value = stage.stageId;
-                option.textContent = `${stage.stageNumber} — ${stage.stageName}`;
+                option.textContent =
+                    `${stage.stageNumber} — ${stage.stageName}`;
                 stageFilter.appendChild(option);
             });
         }

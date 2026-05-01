@@ -43,6 +43,43 @@
                 <i class="bi bi-list"></i>
             </button>
 
+            <!-- Notification Bell -->
+            <div class="dropdown" id="notifBellContainer">
+                <button class="btn btn-outline-light btn-sm position-relative"
+                        id="notifBell"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                        onclick="loadNotifications()">
+                    <i class="bi bi-bell"></i>
+                    <span id="notifBadge"
+                          class="position-absolute top-0 start-100
+                                 translate-middle badge rounded-pill bg-danger
+                                 d-none"
+                          style="font-size:0.6rem;">
+                        0
+                    </span>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end shadow"
+                     style="width:320px; max-height:400px; overflow-y:auto;">
+                    <div class="d-flex justify-content-between
+                                align-items-center px-3 py-2 border-bottom">
+                        <span class="fw-bold text-dark small">
+                            Notifications
+                        </span>
+                        <button class="btn btn-link btn-sm text-decoration-none
+                                       p-0"
+                                onclick="markAllRead()">
+                            Mark all read
+                        </button>
+                    </div>
+                    <div id="notifList">
+                        <div class="text-center py-3 text-muted small">
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- User name (hidden on very small screens) -->
             <span class="text-white d-none d-sm-inline"
                   id="navUserName"

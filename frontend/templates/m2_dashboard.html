@@ -5,20 +5,34 @@
 {% block sidebar %}
 <p class="sidebar-section-label">Senior Manager</p>
 
-<a href="/dashboard/m2"
-   class="sidebar-link active">
+<a href="/dashboard/m2" class="sidebar-link active"
+   id="orgSideLink"
+   onclick="switchM2Tab('org'); return false;">
     <i class="bi bi-building"></i>Org Overview
 </a>
-<a href="#" class="sidebar-link">
-    <i class="bi bi-diagram-3"></i>All Teams
-</a>
-<a href="#" class="sidebar-link">
+<a href="#" class="sidebar-link" id="tasksSideLink"
+   onclick="switchM2Tab('tasks'); return false;">
     <i class="bi bi-heart-pulse"></i>Task Health
 </a>
 {% endblock %}
 
 {% block content %}
 
+<!-- Tab Navigation -->
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link active" id="m2OrgTab"
+           onclick="switchM2Tab('org')" href="#">
+            <i class="bi bi-building me-2"></i>Org Overview
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" id="m2TasksTab"
+           onclick="switchM2Tab('tasks')" href="#">
+            <i class="bi bi-heart-pulse me-2"></i>Task Health
+        </a>
+    </li>
+</ul>
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
 <!-- ORG VIEW (shown by default) -->
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
@@ -197,6 +211,41 @@
                         data-bs-dismiss="modal">Close</button>
             </div>
         </div>
+    </div>
+</div>
+<!-- ══════════ TASK HEALTH TAB ══════════ -->
+<div id="m2TasksContent" class="d-none">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h4 class="fw-bold text-primary mb-1">
+                <i class="bi bi-heart-pulse me-2"></i>Task Health
+            </h4>
+            <p class="text-muted mb-0 small">
+                Task overview across all teams
+            </p>
+        </div>
+        <button class="btn btn-outline-primary btn-sm"
+                onclick="fetchTaskStats()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+    </div>
+
+    <!-- Org Task Stats -->
+    <div id="orgTaskStats" class="mb-4">
+        <div class="text-center py-3">
+            <div class="spinner-border text-primary spinner-border-sm"></div>
+            <span class="ms-2 text-muted">Loading task stats...</span>
+        </div>
+    </div>
+
+    <!-- Team Task Breakdown -->
+    <h5 class="fw-bold mb-3">
+        <i class="bi bi-diagram-3 me-2 text-primary"></i>
+        Team Breakdown
+    </h5>
+    <div id="teamTaskBreakdown">
+        <p class="text-muted text-center py-3">Loading...</p>
     </div>
 </div>
 

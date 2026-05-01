@@ -166,3 +166,131 @@ setInterval(async () => {
         // Ignore network errors during ping
     }
 }, 10 * 60 * 1000);
+// ── NOTIFICATIONS ─────────────────────────────────────────────────────────────
+
+async function loadNotifications() {
+    try {
+        const response = await fetch('/api/notifications');
+        const data     = await response.json();
+
+        if (!response.ok) return;
+
+        const unread = data.unreadCount;
+        const badge  = document.getElementById('notifBadge');
+
+        // Update badge
+        if (badge) {
+            if (unread > 0) {
+                badge.textContent = unread > 9 ? '9+' : unread;
+                badge.classList.remove('d-none');
+            } else {
+                badge.classList.add('d-none');
+            }
+        }
+
+        // Render notification list
+        const list = document.getElementById('notifList');
+        if (!list) return;
+
+        if (data.notifications.length === 0) {
+            list.innerHTML = `
+                <div class="text-center py-4 text-muted small">
+                    <i class="bi bi-bell-slash fs-4 d-block mb-2"></i>
+                    No notifications yet
+                </div>`;
+            return;
+        }
+
+        const icons = {
+            task_assigned: 'bi-clipboard-plus text-primary',
+            task_completed: 'bi-check-circle text-success',
+            task_overdue: 'bi-exclamation-triangle text-danger',
+        };
+
+        list.innerHTML = data.notifications.map(n => `
+            <div class="dropdown-item py-2 border-bottom
+                        ${n.isRead ? '' : 'bg-light'}"
+                 style="white-space:normal; cursor:pointer;"
+                 onclick="markRead('${n.notifId}', this)">
+                <div class="d-flex align-items-start gap-2">
+                    <i class="bi ${icons[n.type]
+                        || 'bi-bell text-secondary'} mt-1"></i>
+                    <div>
+                        <div class="small ${n.isRead
+                            ? 'text-muted' : 'fw-semibold text-dark'}">
+                            ${n.message}
+                        </div>
+                        <div class="text-muted" style="font-size:0.72rem;">
+                            ${n.createdAt}
+                        </div>
+                    </div>
+                    ${!n.isRead
+                        ? '<span class="ms-auto badge bg-primary rounded-pill"'
+                          + ' style="font-size:0.5rem;">NEW</span>'
+                        : ''}
+                </div>
+            </div>`).join('');
+
+    } catch (error) {
+        console.error('Error loading notifications:', error);
+    }
+}
+
+
+async function markRead(notifId, el) {
+    try {
+        await fetch(`/api/notifications/${notifId}/read`, { method: 'PUT' });
+        if (el) {
+            el.classList.remove('bg-light');
+            const badge = el.querySelector('.badge');
+            if (badge) badge.remove();
+            const text = el.querySelector('.fw-semibold');
+            if (text) {
+                text.classList.remove('fw-semibold', 'text-dark');
+                text.classList.add('text-muted');
+            }
+        }
+        // Reload to update badge count
+        await loadNotifications();
+    } catch (error) {
+        console.error('Error marking notification read:', error);
+    }
+}
+
+
+async function markAllRead() {
+    try {
+        await fetch('/api/notifications/read-all', { method: 'PUT' });
+        await loadNotifications();
+    } catch (error) {
+        console.error('Error marking all read:', error);
+    }
+}
+
+
+// Auto-check notifications every 2 minutes
+setInterval(async () => {
+    try {
+        const response = await fetch('/api/notifications');
+        const data     = await response.json();
+        if (response.ok) {
+            const badge = document.getElementById('notifBadge');
+            if (badge) {
+                if (data.unreadCount > 0) {
+                    badge.textContent = data.unreadCount > 9
+                        ? '9+' : data.unreadCount;
+                    badge.classList.remove('d-none');
+                } else {
+                    badge.classList.add('d-none');
+                }
+            }
+        }
+    } catch (e) { /* ignore */ }
+}, 2 * 60 * 1000);
+
+
+// Load notification count on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Small delay so session is established
+    setTimeout(loadNotifications, 1500);
+});
