@@ -29,6 +29,11 @@ app.register_blueprint(tasks_bp)
 from routes.notifications import notifications_bp
 app.register_blueprint(notifications_bp)
 
+from routes.custom_stages import custom_stages_bp
+app.register_blueprint(custom_stages_bp)
+
+from routes.kpi import kpi_bp
+app.register_blueprint(kpi_bp)
 def is_logged_in():
     return 'uid' in session and 'role' in session
 
