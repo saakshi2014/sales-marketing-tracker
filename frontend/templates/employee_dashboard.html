@@ -37,6 +37,12 @@
             </span>
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link" id="kpiTab"
+           onclick="switchTab('kpi')" href="#">
+            <i class="bi bi-graph-up me-2"></i>My KPIs
+        </a>
+    </li>
 </ul>
 
 <!-- ══════════ PIPELINE TAB ══════════ -->
@@ -454,12 +460,65 @@
         </div>
     </div>
 </div>
+<!-- ══════════ KPI TAB ══════════ -->
+<div id="kpiTabContent" class="d-none">
 
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h4 class="fw-bold text-primary mb-1">
+                <i class="bi bi-graph-up me-2"></i>My KPIs
+            </h4>
+            <p class="text-muted mb-0 small">
+                Your performance metrics vs targets
+            </p>
+        </div>
+        <button class="btn btn-outline-primary btn-sm"
+                onclick="fetchMyKpis(currentPeriod)">
+            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+    </div>
+
+    <!-- KPI Loading -->
+    <div id="kpiLoading" class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2 text-muted">Calculating your KPIs...</p>
+    </div>
+
+    <!-- KPI Dashboard Content -->
+    <div id="kpiDashboardContent" class="d-none"></div>
+
+    <!-- Custom KPI Columns -->
+    <div class="card border-0 shadow-sm mt-3">
+        <div class="card-header bg-white border-bottom py-2">
+            <span class="fw-bold text-secondary">
+                <i class="bi bi-plus-square me-2"></i>Custom KPIs
+            </span>
+        </div>
+        <div class="card-body" id="customKpiContent">
+            <p class="text-muted small text-center py-2">Loading...</p>
+        </div>
+    </div>
+</div>
+
+<!-- KPI Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+    <div id="kpiToast"
+         class="toast align-items-center text-white bg-success border-0">
+        <div class="d-flex">
+            <div class="toast-body fw-semibold">Done!</div>
+            <button type="button"
+                    class="btn-close btn-close-white me-2 m-auto"
+                    data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
     window.userRole = "employee";
+</script>
+<script src="{{ url_for('static', filename='js/kpi_dashboard.js') }}">
 </script>
 <script src="{{ url_for('static', filename='js/leads.js') }}"></script>
 <script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
@@ -468,20 +527,31 @@
 function switchTab(tab) {
     const pipelineContent = document.getElementById('pipelineTabContent');
     const tasksContent    = document.getElementById('tasksTabContent');
+    const kpiContent      = document.getElementById('kpiTabContent');
     const pipelineTab     = document.getElementById('pipelineTab');
     const tasksTab        = document.getElementById('tasksTab');
+    const kpiTab          = document.getElementById('kpiTab');
+
+    // Hide all
+    pipelineContent.classList.add('d-none');
+    tasksContent.classList.add('d-none');
+    if (kpiContent) kpiContent.classList.add('d-none');
+    pipelineTab.classList.remove('active');
+    tasksTab.classList.remove('active');
+    if (kpiTab) kpiTab.classList.remove('active');
 
     if (tab === 'pipeline') {
         pipelineContent.classList.remove('d-none');
-        tasksContent.classList.add('d-none');
         pipelineTab.classList.add('active');
-        tasksTab.classList.remove('active');
-    } else {
-        pipelineContent.classList.add('d-none');
+    } else if (tab === 'tasks') {
         tasksContent.classList.remove('d-none');
-        pipelineTab.classList.remove('active');
         tasksTab.classList.add('active');
         fetchTasks();
+    } else if (tab === 'kpi') {
+        if (kpiContent) kpiContent.classList.remove('d-none');
+        if (kpiTab)     kpiTab.classList.add('active');
+        fetchMyKpis('monthly');
+        fetchCustomKpiColumns();
     }
     return false;
 }
