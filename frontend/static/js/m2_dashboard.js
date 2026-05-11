@@ -470,6 +470,11 @@ function showTeamTableError(message) {
 document.addEventListener('DOMContentLoaded', async () => {
     await fetchOrgSummary();
 
+    // Load charts after a short delay
+    setTimeout(() => {
+        loadM2Charts('monthly', '', '');
+    }, 800);
+
     // Drill search listener
     const drillSearch = document.getElementById('drillSearch');
     if (drillSearch) {
@@ -667,4 +672,147 @@ function renderTeamTaskBreakdown(teams) {
                 </tbody>
             </table>
         </div>`;
+}
+// ── DATE RANGE FILTER ─────────────────────────────────────────────────────────
+let currentM2Period    = 'monthly';
+let currentM2StartDate = '';
+let currentM2EndDate   = '';
+
+
+function applyDateFilter(period) {
+    currentM2Period    = period;
+    currentM2StartDate = '';
+    currentM2EndDate   = '';
+
+    // Update button styles
+    ['filterMonthly', 'filterWeekly', 'filterCustom'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.className = 'btn btn-outline-primary btn-sm';
+    });
+
+    const activeId = period === 'monthly' ? 'filterMonthly' : 'filterWeekly';
+    const activeBtn = document.getElementById(activeId);
+    if (activeBtn) activeBtn.className = 'btn btn-primary btn-sm';
+
+    // Hide custom date row
+    const customRow = document.getElementById('customDateRow');
+    if (customRow) customRow.classList.add('d-none');
+
+    // Reload all data
+    fetchOrgSummary();
+    loadM2Charts(period, '', '');
+}
+
+
+function toggleCustomDateFilter() {
+    const customRow = document.getElementById('customDateRow');
+    if (!customRow) return;
+    customRow.classList.toggle('d-none');
+
+    ['filterMonthly', 'filterWeekly'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.className = 'btn btn-outline-primary btn-sm';
+    });
+
+    const btn = document.getElementById('filterCustom');
+    if (btn) btn.className = 'btn btn-primary btn-sm';
+}
+
+
+function applyCustomDateFilter() {
+    const start = document.getElementById('filterStartDate')?.value;
+    const end   = document.getElementById('filterEndDate')?.value;
+
+    if (!start || !end) {
+        alert('Please select both start and end dates.');
+        return;
+    }
+    if (start > end) {
+        alert('Start date must be before end date.');
+        return;
+    }
+
+    currentM2Period    = 'custom';
+    currentM2StartDate = start;
+    currentM2EndDate   = end;
+
+    loadM2Charts('custom', start, end);
+}
+
+
+// ── LOAD ALL M2 CHARTS ────────────────────────────────────────────────────────
+async function loadM2Charts(period='monthly', startDate='', endDate='') {
+    await renderOrgKpiCharts(period, startDate, endDate);
+    fetchAndRenderPipelineFunnel('orgFunnelChart', '/api/leads');
+}
+
+
+// ── ORG KPI CHARTS ────────────────────────────────────────────────────────────
+async function renderOrgKpiCharts(period, startDate, endDate) {
+    try {
+        let url = `/api/kpi/org-summary?period=${period}`;
+        if (startDate && endDate) {
+            url += `&startDate=${startDate}&endDate=${endDate}`;
+        }
+
+        const response = await fetch(url);
+        const data     = await response.json();
+
+        if (!response.ok) {
+            console.error('Org KPI error:', data.error);
+            return;
+        }
+
+        // Lead measures bar chart
+        const leadKeys   = [
+            'outreachCount', 'initialMessageCount'
+        ];
+        const leadLabels = ['Outreach Count', 'Messages Sent'];
+        const leadValues = leadKeys.map(
+            k => data.orgLeadMeasures?.[k] || 0
+        );
+
+        renderBarChart(
+            'orgLeadBarChart',
+            leadLabels,
+            [{
+                label:      'Total (All Employees)',
+                data:       leadValues,
+                color:      '#2E75B633',
+                borderColor:'#2E75B6'
+            }],
+            'Lead Activity — Org Total',
+            ''
+        );
+
+        // Lag measures bar chart
+        const lagKeys   = [
+            'meetingsScheduled', 'meetingsCompleted',
+            'interestedLeads', 'warmLeadsNurtured'
+        ];
+        const lagLabels = [
+            'Mtg Scheduled', 'Mtg Completed',
+            'Interested', 'Warm Leads'
+        ];
+        const lagValues = lagKeys.map(
+            k => data.orgLagMeasures?.[k] || 0
+        );
+
+        renderBarChart(
+            'orgLagBarChart',
+            lagLabels,
+            [{
+                label:      'Total (All Employees)',
+                data:       lagValues,
+                color:      '#1E844933',
+                borderColor:'#1E8449'
+            }],
+            'Pipeline Outcomes — Org Total',
+            ''
+        );
+
+    } catch (error) {
+        console.error('Error rendering org KPI charts:', error);
+    }
 }

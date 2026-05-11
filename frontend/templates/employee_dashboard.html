@@ -478,6 +478,21 @@
         </button>
     </div>
 
+
+    <!-- Period selector -->
+    <div class="d-flex gap-2 mb-3">
+        <button class="btn btn-sm btn-primary" id="empKpiMonthly"
+                onclick="switchKpiPeriod('monthly')">
+            This Month
+        </button>
+        <button class="btn btn-sm btn-outline-primary" id="empKpiWeekly"
+                onclick="switchKpiPeriod('weekly')">
+            This Week
+        </button>
+    </div>
+
+
+
     <!-- KPI Loading -->
     <div id="kpiLoading" class="text-center py-5">
         <div class="spinner-border text-primary" role="status"></div>
@@ -486,6 +501,21 @@
 
     <!-- KPI Dashboard Content -->
     <div id="kpiDashboardContent" class="d-none"></div>
+
+    <!-- Pipeline Funnel Chart -->
+    <div class="card border-0 shadow-sm mt-3">
+        <div class="card-header bg-white border-bottom py-2">
+            <span class="fw-bold text-primary">
+                <i class="bi bi-funnel me-2"></i>
+                My Pipeline Funnel
+            </span>
+        </div>
+        <div class="card-body">
+            <div style="height:260px; position:relative;">
+                <canvas id="employeeFunnelChart"></canvas>
+            </div>
+        </div>
+    </div>
 
     <!-- Custom KPI Columns -->
     <div class="card border-0 shadow-sm mt-3">
@@ -520,6 +550,7 @@
 </script>
 <script src="{{ url_for('static', filename='js/kpi_dashboard.js') }}">
 </script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/leads.js') }}"></script>
 <script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
 <script>
@@ -552,6 +583,11 @@ function switchTab(tab) {
         if (kpiTab)     kpiTab.classList.add('active');
         fetchMyKpis('monthly');
         fetchCustomKpiColumns();
+        setTimeout(() => {
+            fetchAndRenderPipelineFunnel(
+                'employeeFunnelChart', '/api/leads'
+            );
+        }, 600);
     }
     return false;
 }
@@ -571,5 +607,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }, 1000);
 });
+
+function switchKpiPeriod(period) {
+    document.getElementById('empKpiMonthly').className =
+        period === 'monthly'
+            ? 'btn btn-sm btn-primary'
+            : 'btn btn-sm btn-outline-primary';
+    document.getElementById('empKpiWeekly').className =
+        period === 'weekly'
+            ? 'btn btn-sm btn-primary'
+            : 'btn btn-sm btn-outline-primary';
+
+    fetchMyKpis(period);
+}
 </script>
 {% endblock %}

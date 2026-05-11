@@ -54,6 +54,53 @@
         </button>
     </div>
 
+    <!-- Date Range Filter -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2 align-items-center">
+                <div class="col-auto">
+                    <label class="form-label fw-semibold mb-0 small">
+                        Date Range:
+                    </label>
+                </div>
+                <div class="col-auto">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-primary"
+                                id="filterMonthly"
+                                onclick="applyDateFilter('monthly')">
+                            This Month
+                        </button>
+                        <button class="btn btn-outline-primary"
+                                id="filterWeekly"
+                                onclick="applyDateFilter('weekly')">
+                            This Week
+                        </button>
+                        <button class="btn btn-outline-primary"
+                                id="filterCustom"
+                                onclick="toggleCustomDateFilter()">
+                            Custom
+                        </button>
+                    </div>
+                </div>
+                <div class="col-auto d-none" id="customDateRow">
+                    <div class="d-flex gap-2 align-items-center">
+                        <input type="date" id="filterStartDate"
+                               class="form-control form-control-sm">
+                        <span class="text-muted small">to</span>
+                        <input type="date" id="filterEndDate"
+                               class="form-control form-control-sm">
+                        <button class="btn btn-sm btn-primary"
+                                onclick="applyCustomDateFilter()">
+                            Apply
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
     <!-- Org Stats Bar -->
     <div id="orgStatsBar" class="mb-4">
         <div class="row g-2">
@@ -185,6 +232,62 @@
         </div>
     </div>
 
+    <!-- Charts Row -->
+    <div class="row g-3 mt-1">
+
+        <!-- Org Lead Measures Chart -->
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-bottom py-2">
+                    <span class="fw-bold text-primary">
+                        <i class="bi bi-activity me-2"></i>
+                        Lead Measures — Org Total
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div style="height:220px; position:relative;">
+                        <canvas id="orgLeadBarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Org Lag Measures Chart -->
+        <div class="col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-bottom py-2">
+                    <span class="fw-bold text-primary">
+                        <i class="bi bi-graph-up-arrow me-2"></i>
+                        Lag Measures — Org Total
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div style="height:220px; position:relative;">
+                        <canvas id="orgLagBarChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Org Pipeline Funnel -->
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom py-2">
+                    <span class="fw-bold text-primary">
+                        <i class="bi bi-funnel me-2"></i>
+                        Organisation Pipeline Funnel
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div style="height:280px; position:relative;">
+                        <canvas id="orgFunnelChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
 </div>
 
 <!-- ── HISTORY MODAL (Read-only for M2) ───────────────────────────────────── -->
@@ -254,4 +357,5 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/m2_dashboard.js') }}">
 </script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
 {% endblock %}

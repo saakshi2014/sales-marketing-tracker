@@ -538,20 +538,67 @@
 
     <!-- Team KPI Comparison -->
     <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header bg-white border-bottom py-2">
+        <div class="card-header bg-white border-bottom py-2
+                    d-flex justify-content-between align-items-center">
             <span class="fw-bold text-primary">
                 <i class="bi bi-people me-2"></i>
                 Team KPI Comparison
             </span>
+            <div class="d-flex gap-2 align-items-center">
+                <select id="kpiSelector"
+                        class="form-select form-select-sm"
+                        style="width:180px;"
+                        onchange="refreshTeamCharts()">
+                    <option value="outreachCount">Outreach Count</option>
+                    <option value="connectionRate">Connection Rate</option>
+                    <option value="initialMessageCount">Messages Sent</option>
+                    <option value="replyRate">Reply Rate</option>
+                    <option value="meetingConversionRate">
+                        Meeting Conv. Rate
+                    </option>
+                    <option value="meetingsScheduled">
+                        Meetings Scheduled
+                    </option>
+                    <option value="meetingsCompleted">
+                        Meetings Completed
+                    </option>
+                    <option value="interestedLeads">Interested Leads</option>
+                </select>
+            </div>
         </div>
-        <div class="card-body" id="teamKpiContent">
-            <div class="text-center py-4">
-                <div class="spinner-border text-primary"></div>
-                <p class="mt-2 text-muted">Loading team KPIs...</p>
+        <div class="card-body">
+            <!-- Bar Chart -->
+            <div style="height:220px; position:relative;">
+                <canvas id="teamKpiBarChart"></canvas>
+            </div>
+            <hr class="my-3">
+            <!-- Table below chart -->
+            <div id="teamKpiContent">
+                <div class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm
+                                text-primary"></div>
+                    <span class="ms-2 text-muted small">
+                        Loading team KPIs...
+                    </span>
+                </div>
             </div>
         </div>
     </div>
 
+    <!-- Pipeline Funnel Chart -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white border-bottom py-2">
+            <span class="fw-bold text-primary">
+                <i class="bi bi-funnel me-2"></i>
+                Pipeline Funnel — Team View
+            </span>
+        </div>
+        <div class="card-body">
+            <div style="height:280px; position:relative;">
+                <canvas id="m1FunnelChart"></canvas>
+            </div>
+        </div>
+    </div>
     <!-- Custom KPI Column Management -->
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white border-bottom py-2
@@ -631,6 +678,7 @@
 </script>
 <script src="{{ url_for('static', filename='js/kpi_dashboard.js') }}">
 </script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
 <script>
     window.userRole = "m1_manager";
 </script>
@@ -638,7 +686,22 @@
 </script>
 <script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
 <script>
-    
+ 
+ // Refresh bar chart when KPI selector changes
+function refreshTeamCharts() {
+    const kpiKey = document.getElementById('kpiSelector')
+                           ?.value || 'outreachCount';
+    buildTeamKpiBarChart('teamKpiBarChart', kpiKey, 'monthly');
+}
+
+// Load all M1 charts when KPI tab opens
+function loadM1Charts() {
+    const kpiKey = document.getElementById('kpiSelector')
+                           ?.value || 'outreachCount';
+    buildTeamKpiBarChart('teamKpiBarChart', kpiKey, 'monthly');
+    fetchAndRenderPipelineFunnel('m1FunnelChart', '/api/leads');
+}
+
 function switchM1Tab(tab) {
     const tabs = ['pipeline', 'tasks', 'stages', 'kpi'];
     tabs.forEach(t => {
@@ -655,11 +718,12 @@ function switchM1Tab(tab) {
     if (activeContent) activeContent.classList.remove('d-none');
     if (activeTab)     activeTab.classList.add('active');
 
-    if (tab === 'tasks')  fetchTasks();
+   if (tab === 'tasks')  fetchTasks();
     if (tab === 'stages') fetchAllStagesForManagement();
     if (tab === 'kpi') {
         fetchTeamKpis('monthly');
         fetchM1CustomKpiColumns();
+        setTimeout(loadM1Charts, 500);
     }
 }
 
