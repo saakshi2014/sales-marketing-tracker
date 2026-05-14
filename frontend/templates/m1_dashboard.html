@@ -31,6 +31,12 @@
         </a>
     </li>
     <li class="nav-item">
+        <a class="nav-link" id="m1CoachingTab"
+           onclick="switchM1Tab('coaching')" href="#">
+            <i class="bi bi-chat-heart me-2"></i>Coaching
+        </a>
+    </li>
+    <li class="nav-item">
         <a class="nav-link" id="m1TasksTab"
            onclick="switchM1Tab('tasks')" href="#">
             <i class="bi bi-clipboard-check me-2"></i>Task Management
@@ -510,6 +516,224 @@
     </div>
 </div>
 
+<!-- ══════════ COACHING TAB ══════════ -->
+<div id="m1CoachingContent" class="d-none">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h4 class="fw-bold text-primary mb-1">
+                <i class="bi bi-chat-heart me-2"></i>Coaching Sessions
+            </h4>
+            <p class="text-muted mb-0 small">
+                Log and track coaching sessions with your team
+            </p>
+        </div>
+        <button class="btn btn-primary"
+                data-bs-toggle="modal"
+                data-bs-target="#logSessionModal">
+            <i class="bi bi-plus-lg me-2"></i>Log Session
+        </button>
+    </div>
+
+    <!-- Stats -->
+    <div id="coachingStatsBar" class="mb-3"></div>
+
+    <!-- Search -->
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-2">
+            <div class="input-group">
+                <span class="input-group-text bg-light">
+                    <i class="bi bi-search text-muted"></i>
+                </span>
+                <input type="text" id="coachingSearch"
+                       class="form-control form-control-sm"
+                       placeholder="Search by name or topic...">
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="coachingLoading" class="text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2 text-muted">Loading sessions...</p>
+    </div>
+
+    <!-- Table -->
+    <div id="coachingTableWrapper" class="card shadow-sm d-none">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Team Member</th>
+                            <th>Date</th>
+                            <th>Topic</th>
+                            <th>Notes</th>
+                            <th>Follow-up</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="coachingTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── LOG SESSION MODAL ──────────────────────────────────────────────────── -->
+<div class="modal fade" id="logSessionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-chat-heart me-2"></i>
+                    Log Coaching Session
+                </h5>
+                <button type="button" class="btn-close btn-close-white"
+                        data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="coachingFormError"
+                     class="alert alert-danger d-none"></div>
+                <form id="logSessionForm">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">
+                                Team Member
+                                <span class="text-danger">*</span>
+                            </label>
+                            <select id="coachingSpecialist"
+                                    class="form-select">
+                                <option value="">
+                                    Select team member...
+                                </option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">
+                                Session Date
+                                <span class="text-danger">*</span>
+                            </label>
+                            <input type="date" id="coachingDate"
+                                   class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">
+                                Topic <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" id="coachingTopic"
+                                   class="form-control"
+                                   placeholder="e.g. Improving connection rate">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">
+                                Notes
+                            </label>
+                            <textarea id="coachingNotes"
+                                      class="form-control" rows="3"
+                                      placeholder="Session notes and outcomes...">
+                            </textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">
+                                Follow-up Date (optional)
+                            </label>
+                            <input type="date" id="coachingFollowUp"
+                                   class="form-control">
+                            <div class="form-text">
+                                Set a date to check progress
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary"
+                        data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="submitLogSession"
+                        class="btn btn-primary fw-semibold"
+                        onclick="submitLogSession()">
+                    <i class="bi bi-check-lg me-1"></i>Log Session
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── EDIT SESSION MODAL ─────────────────────────────────────────────────── -->
+<div class="modal fade" id="editSessionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-pencil me-2"></i>Edit Session
+                </h5>
+                <button type="button" class="btn-close"
+                        data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editSessionId">
+                <div id="editSessionError"
+                     class="alert alert-danger d-none"></div>
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Topic</label>
+                        <input type="text" id="editSessionTopic"
+                               class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Notes</label>
+                        <textarea id="editSessionNotes"
+                                  class="form-control" rows="3">
+                        </textarea>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">
+                            Follow-up Date
+                        </label>
+                        <input type="date" id="editSessionFollowUp"
+                               class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check">
+                            <input type="checkbox"
+                                   id="editSessionCompleted"
+                                   class="form-check-input">
+                            <label class="form-check-label"
+                                   for="editSessionCompleted">
+                                Mark as completed
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary"
+                        data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="submitEditSession"
+                        class="btn btn-primary"
+                        onclick="submitEditSession()">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Coaching Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+    <div id="coachingToast"
+         class="toast align-items-center text-white bg-success border-0">
+        <div class="d-flex">
+            <div class="toast-body fw-semibold">Done!</div>
+            <button type="button"
+                    class="btn-close btn-close-white me-2 m-auto"
+                    data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
 <!-- Stage Toast -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
     <div id="stageToast"
@@ -679,6 +903,7 @@
 <script src="{{ url_for('static', filename='js/kpi_dashboard.js') }}">
 </script>
 <script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/coaching.js') }}"></script>
 <script>
     window.userRole = "m1_manager";
 </script>
@@ -718,12 +943,16 @@ function switchM1Tab(tab) {
     if (activeContent) activeContent.classList.remove('d-none');
     if (activeTab)     activeTab.classList.add('active');
 
-   if (tab === 'tasks')  fetchTasks();
-    if (tab === 'stages') fetchAllStagesForManagement();
+ if (tab === 'tasks')    fetchTasks();
+    if (tab === 'stages')   fetchAllStagesForManagement();
     if (tab === 'kpi') {
         fetchTeamKpis('monthly');
         fetchM1CustomKpiColumns();
         setTimeout(loadM1Charts, 500);
+    }
+    if (tab === 'coaching') {
+        fetchCoachingAssignees();
+        fetchCoachingSessions();
     }
 }
 

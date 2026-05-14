@@ -34,6 +34,11 @@ app.register_blueprint(custom_stages_bp)
 
 from routes.kpi import kpi_bp
 app.register_blueprint(kpi_bp)
+from routes.coaching import coaching_bp
+app.register_blueprint(coaching_bp)
+
+from routes.reviews import reviews_bp
+app.register_blueprint(reviews_bp)
 def is_logged_in():
     return 'uid' in session and 'role' in session
 

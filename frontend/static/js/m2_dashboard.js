@@ -485,20 +485,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 function switchM2Tab(tab) {
     const orgView      = document.getElementById('orgView');
     const tasksContent = document.getElementById('m2TasksContent');
+    const reviewsContent = document.getElementById('m2ReviewsContent');
     const orgTab       = document.getElementById('m2OrgTab');
     const tasksTab     = document.getElementById('m2TasksTab');
+    const reviewsTab   = document.getElementById('m2ReviewsTab');
+
+    // Hide all
+    if (orgView)       orgView.classList.add('d-none');
+    if (tasksContent)  tasksContent.classList.add('d-none');
+    if (reviewsContent)reviewsContent.classList.add('d-none');
+
+    // Remove active from all tabs
+    [orgTab, tasksTab, reviewsTab].forEach(t => {
+        if (t) t.classList.remove('active');
+    });
 
     if (tab === 'org') {
-        orgView.classList.remove('d-none');
-        tasksContent.classList.add('d-none');
-        orgTab.classList.add('active');
-        tasksTab.classList.remove('active');
-    } else {
-        orgView.classList.add('d-none');
-        tasksContent.classList.remove('d-none');
-        orgTab.classList.remove('active');
-        tasksTab.classList.add('active');
+        if (orgView) orgView.classList.remove('d-none');
+        if (orgTab)  orgTab.classList.add('active');
+    } else if (tab === 'tasks') {
+        if (tasksContent) tasksContent.classList.remove('d-none');
+        if (tasksTab)     tasksTab.classList.add('active');
         fetchTaskStats();
+    } else if (tab === 'reviews') {
+        if (reviewsContent) reviewsContent.classList.remove('d-none');
+        if (reviewsTab)     reviewsTab.classList.add('active');
+        fetchM1Managers();
+        fetchReviews();
     }
 }
 
