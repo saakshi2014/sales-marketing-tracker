@@ -68,6 +68,16 @@
                 Monitor your team's lead activity
             </p>
         </div>
+        <a href="/api/export/leads"
+           class="btn btn-outline-success btn-sm me-2"
+           title="Export team leads as CSV">
+            <i class="bi bi-download me-1"></i>Export Leads
+        </a>
+        <a href="/api/export/kpi"
+           class="btn btn-outline-info btn-sm me-2"
+           title="Export KPI data as CSV">
+            <i class="bi bi-graph-up me-1"></i>Export KPIs
+        </a>
         <button class="btn btn-outline-primary btn-sm"
                 onclick="fetchTeamLeads()">
             <i class="bi bi-arrow-clockwise me-1"></i>Refresh
@@ -172,6 +182,11 @@
                 Assign and monitor tasks for your team
             </p>
         </div>
+        <a href="/api/export/tasks"
+           class="btn btn-outline-success btn-sm me-2"
+           title="Export tasks as CSV">
+            <i class="bi bi-download me-1"></i>Export CSV
+        </a>
         <button class="btn btn-primary"
                 data-bs-toggle="modal"
                 data-bs-target="#createTaskModal">
@@ -528,6 +543,11 @@
                 Log and track coaching sessions with your team
             </p>
         </div>
+        <a href="/api/export/coaching"
+           class="btn btn-outline-success btn-sm me-2"
+           title="Export coaching sessions as CSV">
+            <i class="bi bi-download me-1"></i>Export CSV
+        </a>
         <button class="btn btn-primary"
                 data-bs-toggle="modal"
                 data-bs-target="#logSessionModal">

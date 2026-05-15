@@ -39,6 +39,8 @@ app.register_blueprint(coaching_bp)
 
 from routes.reviews import reviews_bp
 app.register_blueprint(reviews_bp)
+from routes.export import export_bp
+app.register_blueprint(export_bp)
 def is_logged_in():
     return 'uid' in session and 'role' in session
 
