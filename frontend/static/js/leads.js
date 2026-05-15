@@ -24,6 +24,8 @@ const STAGE_COLORS = {
 let allLeads   = [];
 let allStages  = [];
 let currentFilter = 'all';
+let currentPage   = 1;
+const PER_PAGE    = 50;
 let showArchived  = false;
 
 // ── FETCH ALL STAGES ──────────────────────────────────────────────────────────
@@ -65,8 +67,16 @@ async function fetchLeads() {
         const response = await fetch('/api/leads');
         const data     = await response.json();
 
-        if (response.ok) {
+       if (response.ok) {
             allLeads = data.leads;
+
+            // Update pagination controls
+            updatePaginationControls(
+                data.page || 1,
+                data.totalPages || 1,
+                data.total || data.leads.length,
+                data.leads.length
+            );
             // Filter archived by default
             const visibleLeads = showArchived
                 ? data.leads
@@ -652,7 +662,150 @@ function toggleShowArchived() {
         : allLeads.filter(l => !l.isArchived);
     renderLeadsTable(visibleLeads);
 }
+// ── PAGINATION ────────────────────────────────────────────────────────────────
+function changePage(direction) {
+    currentPage = currentPage + direction;
+    if (currentPage < 1) currentPage = 1;
+    fetchLeadsPage(currentPage);
+}
 
+async function fetchLeadsPage(page = 1) {
+    try {
+        showTableLoading(true);
+        const response = await fetch(
+            `/api/leads?page=${page}&per_page=${PER_PAGE}`);
+        const data     = await response.json();
+
+        if (response.ok) {
+            allLeads = data.leads;
+            updateStatsBar(data.total, data.activeCount);
+            renderLeadsTable(
+                showArchived
+                    ? data.leads
+                    : data.leads.filter(l => !l.isArchived)
+            );
+            updatePaginationControls(
+                data.page, data.totalPages,
+                data.total, data.leads.length
+            );
+        }
+    } catch (error) {
+        showTableError('Network error. Please refresh.');
+    } finally {
+        showTableLoading(false);
+    }
+}
+
+function updatePaginationControls(page, totalPages,
+                                   total, showing) {
+    const controls  = document.getElementById('paginationControls');
+    const info      = document.getElementById('paginationInfo');
+    const indicator = document.getElementById('pageIndicator');
+    const prevBtn   = document.getElementById('prevPageBtn');
+    const nextBtn   = document.getElementById('nextPageBtn');
+
+    if (!controls) return;
+
+    if (total > PER_PAGE) {
+        controls.classList.remove('d-none');
+    } else {
+        controls.classList.add('d-none');
+    }
+
+    if (info) {
+        const start = ((page - 1) * PER_PAGE) + 1;
+        const end   = Math.min(page * PER_PAGE, total);
+        info.textContent =
+            `Showing ${start}–${end} of ${total} leads`;
+    }
+    if (indicator) {
+        indicator.textContent = `Page ${page} of ${totalPages}`;
+    }
+    if (prevBtn) prevBtn.disabled = page <= 1;
+    if (nextBtn) nextBtn.disabled = page >= totalPages;
+
+    currentPage = page;
+}
+// ── BULK IMPORT ───────────────────────────────────────────────────────────────
+async function submitBulkImport() {
+    const fileInput = document.getElementById('bulkImportFile');
+    const errorEl   = document.getElementById('importError');
+    const resultsEl = document.getElementById('importResults');
+    const successEl = document.getElementById('importSuccess');
+    const errorsEl  = document.getElementById('importErrors');
+
+    errorEl.classList.add('d-none');
+    resultsEl.classList.add('d-none');
+    successEl.classList.add('d-none');
+    errorsEl.classList.add('d-none');
+
+    if (!fileInput.files || fileInput.files.length === 0) {
+        errorEl.textContent = 'Please select a CSV file first.';
+        errorEl.classList.remove('d-none');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+        errorEl.textContent = 'Only CSV files are supported.';
+        errorEl.classList.remove('d-none');
+        return;
+    }
+
+    const btn       = document.getElementById('submitBulkImport');
+    btn.disabled    = true;
+    btn.innerHTML   = '<span class="spinner-border spinner-border-sm me-2">'
+                    + '</span>Importing...';
+
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch('/api/leads/bulk-import', {
+            method: 'POST',
+            body:   formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            resultsEl.classList.remove('d-none');
+
+            // Show success message
+            successEl.classList.remove('d-none');
+            document.getElementById('importSuccessMsg').textContent =
+                data.message;
+
+            // Show errors if any
+            if (data.errors && data.errors.length > 0) {
+                errorsEl.classList.remove('d-none');
+                const errorList =
+                    document.getElementById('importErrorList');
+                errorList.innerHTML = data.errors
+                    .map(e => `<li>${e}</li>`).join('');
+            }
+
+            // Reset file input
+            fileInput.value = '';
+
+            // Refresh leads table
+            await fetchLeads();
+            showToast(
+                `Imported ${data.imported} leads successfully!`,
+                'success'
+            );
+        } else {
+            errorEl.textContent = data.error || 'Import failed.';
+            errorEl.classList.remove('d-none');
+        }
+    } catch (error) {
+        errorEl.textContent = 'Network error. Please try again.';
+        errorEl.classList.remove('d-none');
+    } finally {
+        btn.disabled  = false;
+        btn.innerHTML = '<i class="bi bi-upload me-1"></i>Import Leads';
+    }
+}
 // ── INITIALISE ON PAGE LOAD ───────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
     await fetchStages();

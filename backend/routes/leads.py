@@ -184,14 +184,29 @@ def get_leads():
             })
 
         # Sort by most recently created first
+       # Sort by most recently created first
         leads_list.sort(key=lambda x: x['leadId'], reverse=True)
 
-        return jsonify({
-            "leads":       leads_list,
-            "total":       len(leads_list),
-            "activeCount": sum(1 for l in leads_list if not l['isArchived'])
-        })
+        # ── PAGINATION ────────────────────────────────────────────────────────
+        page       = int(request.args.get('page', 1))
+        per_page   = int(request.args.get('per_page', 50))
+        total      = len(leads_list)
+        start      = (page - 1) * per_page
+        end        = start + per_page
+        paginated  = leads_list[start:end]
+        total_pages = (total + per_page - 1) // per_page
 
+        return jsonify({
+            "leads":       paginated,
+            "total":       total,
+            "activeCount": sum(1 for l in leads_list
+                               if not l['isArchived']),
+            "page":        page,
+            "perPage":     per_page,
+            "totalPages":  total_pages,
+            "hasNext":     page < total_pages,
+            "hasPrev":     page > 1,
+        })
     except Exception as e:
         print(f"Error fetching leads: {e}")
         return jsonify({"error": str(e)}), 500
@@ -757,3 +772,191 @@ def get_all_teams():
     except Exception as e:
         print(f"Error fetching teams: {e}")
         return jsonify({"error": str(e)}), 500
+
+    # ── ROUTE 10: Bulk import leads from CSV ───────────────────────────────────────
+@leads_bp.route('/api/leads/bulk-import', methods=['POST'])
+def bulk_import_leads():
+    """
+    Imports multiple leads from a CSV file upload.
+    Accepts multipart/form-data with a 'file' field.
+
+    CSV format (required columns):
+    name, company, email, phone, linkedinUrl
+
+    Returns a summary of imported/skipped/failed rows.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    uid  = session['uid']
+    role = session['role']
+
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files['file']
+
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+
+    if not file.filename.lower().endswith('.csv'):
+        return jsonify({"error": "Only CSV files are supported"}), 400
+
+    try:
+        import csv
+        import io
+
+        db      = get_firestore_client()
+        content = file.read().decode('utf-8-sig')
+        reader  = csv.DictReader(io.StringIO(content))
+
+        # Validate headers
+        required_cols = {'name'}
+        if not reader.fieldnames:
+            return jsonify({"error": "CSV file is empty"}), 400
+
+        headers_lower = {h.lower().strip() for h in reader.fieldnames}
+        missing = required_cols - headers_lower
+        if missing:
+            return jsonify({
+                "error": f"Missing required column: {missing}"
+            }), 400
+
+        # Get user's teamId
+        user_doc = db.collection('users').document(uid).get()
+        team_id  = user_doc.to_dict().get('teamId', 'team_001')
+
+        imported = 0
+        skipped  = 0
+        errors   = []
+
+        # Process each row
+        batch      = db.batch()
+        batch_size = 0
+        MAX_BATCH  = 450  # Firestore batch limit is 500
+
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                # Normalize keys
+                row_clean = {k.lower().strip(): v.strip()
+                             for k, v in row.items() if k}
+
+                name = row_clean.get('name', '').strip()
+                if not name:
+                    skipped += 1
+                    errors.append(f"Row {row_num}: Name is empty — skipped")
+                    continue
+
+                lead_id = str(uuid.uuid4())
+                lead = {
+                    "leadId":       lead_id,
+                    "employeeUid":  uid,
+                    "teamId":       team_id,
+                    "name":         name,
+                    "company":      row_clean.get('company', ''),
+                    "email":        row_clean.get('email', ''),
+                    "phone":        row_clean.get('phone', ''),
+                    "linkedinUrl":  row_clean.get('linkedinurl', ''),
+                    "currentStage": "stage_1_1",
+                    "isArchived":   False,
+                    "createdAt":    firestore.SERVER_TIMESTAMP,
+                    "updatedAt":    firestore.SERVER_TIMESTAMP,
+                }
+
+                lead_ref = db.collection('leads').document(lead_id)
+                batch.set(lead_ref, lead)
+
+                # Also write audit log in batch
+                log_id  = str(uuid.uuid4())
+                log_ref = db.collection('audit_logs').document(log_id)
+                batch.set(log_ref, {
+                    "logId":       log_id,
+                    "leadId":      lead_id,
+                    "employeeUid": uid,
+                    "fromStage":   None,
+                    "toStage":     "stage_1_1",
+                    "changedAt":   firestore.SERVER_TIMESTAMP,
+                    "notes":       "Imported from CSV"
+                })
+
+                batch_size += 2  # lead + audit log
+                imported   += 1
+
+                # Commit batch every MAX_BATCH operations
+                if batch_size >= MAX_BATCH:
+                    batch.commit()
+                    batch      = db.batch()
+                    batch_size = 0
+
+            except Exception as row_error:
+                skipped += 1
+                errors.append(
+                    f"Row {row_num}: {str(row_error)}")
+
+        # Commit remaining
+        if batch_size > 0:
+            batch.commit()
+
+        return jsonify({
+            "message":  f"Import complete: {imported} imported, "
+                        f"{skipped} skipped",
+            "imported": imported,
+            "skipped":  skipped,
+            "errors":   errors[:10]  # Return first 10 errors only
+        })
+
+    except UnicodeDecodeError:
+        return jsonify({
+            "error": "File encoding error. Save CSV as UTF-8 and retry."
+        }), 400
+    except Exception as e:
+        print(f"Error importing leads: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── ROUTE 11: Download CSV import template ─────────────────────────────────────
+@leads_bp.route('/api/leads/import-template', methods=['GET'])
+def download_import_template():
+    """
+    Returns a blank CSV template for bulk lead import.
+    Employee downloads this, fills it in, then uploads it.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    from flask import Response
+    import csv
+    import io
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header row
+    writer.writerow([
+        'name', 'company', 'email', 'phone', 'linkedinUrl'
+    ])
+
+    # Example rows
+    writer.writerow([
+        'John Smith', 'Acme Corp',
+        'john@acme.com', '+91 9876543210',
+        'https://linkedin.com/in/johnsmith'
+    ])
+    writer.writerow([
+        'Jane Doe', 'Tech Ventures',
+        'jane@techventures.com', '+91 9876543211',
+        'https://linkedin.com/in/janedoe'
+    ])
+
+    output.seek(0)
+
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={
+            'Content-Disposition':
+                'attachment; filename="leads_import_template.csv"'
+        }
+    )    

@@ -6,6 +6,7 @@ Only M1 and M2 Managers can manage custom stages.
 
 from flask import Blueprint, request, jsonify, session
 from firebase_config import get_firestore_client
+from routes.stages import invalidate_stages_cache
 from firebase_admin import firestore
 import uuid
 
@@ -79,6 +80,8 @@ def create_custom_stage():
         }
 
         db.collection('pipeline_stages').document(stage_id).set(stage)
+        invalidate_stages_cache()
+
 
         return jsonify({
             "message": "Custom stage created successfully",
@@ -190,6 +193,8 @@ def toggle_stage(stage_id):
             return jsonify({"error": "Stage not found"}), 404
 
         stage_ref.update({"isActive": is_active})
+        invalidate_stages_cache()
+
 
         action = "activated" if is_active else "deactivated"
         return jsonify({
