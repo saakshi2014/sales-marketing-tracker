@@ -254,3 +254,17 @@ Document ID = auto-generated UUID
 | isCompleted | boolean | false until marked complete |
 | completedAt | timestamp | null until completed |
 | createdAt | timestamp | Creation time |
+
+---
+
+## Audit Trail Coverage
+
+| Event | Logged | Location |
+|-------|--------|----------|
+| Lead stage change | ✅ Yes | audit_logs collection |
+| Lead created | ✅ Yes | audit_logs (fromStage: null) |
+| Lead archived | ✅ Yes | audit_logs (notes: "Lead archived") |
+| Lead imported via CSV | ✅ Yes | audit_logs (notes: "Imported from CSV") |
+| Task status change | ✅ Yes | Notifications collection |
+| Coaching session logged | ✅ Yes | coaching_sessions collection |
+| Team membership change | ⚠️ Seeded only | No runtime team change UI in V4 |
