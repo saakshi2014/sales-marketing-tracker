@@ -815,3 +815,46 @@ def get_org_kpi_summary():
     except Exception as e:
         print(f"Error fetching org KPI summary: {e}")
         return jsonify({"error": str(e)}), 500   
+
+@kpi_bp.route('/api/kpi/custom-columns/<column_id>/deactivate',
+              methods=['PATCH'])
+def deactivate_custom_column(column_id):
+    """
+    Deactivates a custom KPI column.
+    Historical entries are preserved — only isActive is set to False.
+    SRS: Custom KPI columns cannot be deleted, only deactivated.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    if session['role'] not in ['m1_manager', 'm2_manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        db  = get_firestore_client()
+        ref = db.collection('kpi_custom_columns').document(column_id)
+        doc = ref.get()
+
+        if not doc.exists:
+            return jsonify({"error": "Column not found"}), 404
+
+        # Check if column has data — must preserve if so
+        entries = db.collection('kpi_custom_entries')\
+                    .where('columnId', '==', column_id).get()
+
+        ref.update({
+            "isActive":     False,
+            "hasData":      len(list(entries)) > 0,
+            "deactivatedAt": firestore.SERVER_TIMESTAMP,
+            "deactivatedBy": session['uid']
+        })
+
+        return jsonify({
+            "message":  "Column deactivated. Historical data preserved.",
+            "columnId": column_id
+        })
+
+    except Exception as e:
+        print(f"Error deactivating column: {e}")
+        return jsonify({"error": str(e)}), 500    

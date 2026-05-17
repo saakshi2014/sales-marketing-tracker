@@ -69,10 +69,31 @@ def seed_users():
             print("   Open seed_users.py and paste the real UIDs")
             return
 
+        # ── HIGHLANDER RULE CHECK FOR M2 MANAGER ──────────────────────
+        if user["role"] == "m2_manager":
+
+            existing_m2 = (
+                db.collection('users')
+                .where('role', '==', 'm2_manager')
+                .get()
+            )
+
+            existing_m2_list = [
+                d for d in existing_m2
+                if d.id != M2_MANAGER_UID
+            ]
+
+            if existing_m2_list:
+                print("\n⚠️  WARNING: Another M2 Manager already exists!")
+                print("   Highlander Rule: Only ONE M2 Manager allowed.")
+                print("   Skipping M2 creation.")
+                continue
+
         db.collection('users').document(uid).set(user)
+
         print(f"✅ Created: {user['email']} | role: {user['role']}")
 
-    print("\n✅ ALL 3 USERS SEEDED SUCCESSFULLY")
+    print("\n✅ USER SEEDING PROCESS COMPLETED")
     print("=" * 52)
 
 
