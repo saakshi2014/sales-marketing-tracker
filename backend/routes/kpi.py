@@ -545,6 +545,7 @@ def create_custom_kpi_column():
 # ── ROUTE 6: Get custom KPI columns for team ──────────────────────────────────
 @kpi_bp.route('/api/kpi/custom-columns', methods=['GET'])
 def get_custom_kpi_columns():
+
     """
     Returns all custom KPI columns for the current user's team.
     """
@@ -577,6 +578,56 @@ def get_custom_kpi_columns():
 
     except Exception as e:
         print(f"Error fetching custom columns: {e}")
+        return jsonify({"error": str(e)}), 500
+
+        # ── ROUTE 12: Get ALL custom KPI columns including inactive (M1/M2) ────────────
+@kpi_bp.route('/api/kpi/custom-columns/all', methods=['GET'])
+def get_all_custom_kpi_columns():
+    """
+    Returns ALL custom KPI columns including inactive ones.
+    Used by M1/M2 dashboard to manage columns (deactivate/reactivate).
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    if session['role'] not in ['m1_manager', 'm2_manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        db = get_firestore_client()
+
+        user_doc = db.collection('users')\
+                     .document(session['uid']).get()
+        team_id  = user_doc.to_dict().get('teamId', 'team_001')
+
+        columns_ref = db.collection('kpi_custom_columns')\
+                        .where('teamId', '==', team_id).get()
+
+        columns = []
+        for col in columns_ref:
+            c = col.to_dict()
+            columns.append({
+                "columnId":    c.get('columnId'),
+                "columnName":  c.get('columnName'),
+                "description": c.get('description', ''),
+                "dataType":    c.get('dataType', 'numeric'),
+                "isActive":    c.get('isActive', True),
+                "hasData":     c.get('hasData', False),
+            })
+
+        # Sort: active first then inactive
+        columns.sort(key=lambda x: (not x['isActive'], x['columnName']))
+
+        return jsonify({
+            "columns":       columns,
+            "total":         len(columns),
+            "activeCount":   sum(1 for c in columns if c['isActive']),
+            "inactiveCount": sum(1 for c in columns if not c['isActive'])
+        })
+
+    except Exception as e:
+        print(f"Error fetching all custom columns: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -858,3 +909,93 @@ def deactivate_custom_column(column_id):
     except Exception as e:
         print(f"Error deactivating column: {e}")
         return jsonify({"error": str(e)}), 500    
+        # ── ROUTE 10: Deactivate a custom KPI column ───────────────────────────────────
+@kpi_bp.route('/api/kpi/custom-columns/<column_id>/deactivate',
+              methods=['PATCH'])
+def deactivate_custom_kpi_column(column_id):
+    """
+    Deactivates a custom KPI column.
+    SRS Section 4.3: Custom KPI columns cannot be deleted
+    once data has been entered — only deactivated.
+    Historical entries are always preserved.
+    """
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    if session['role'] not in ['m1_manager', 'm2_manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        db  = get_firestore_client()
+        ref = db.collection('kpi_custom_columns').document(column_id)
+        doc = ref.get()
+
+        if not doc.exists:
+            return jsonify({"error": "Column not found"}), 404
+
+        col_data = doc.to_dict()
+
+        # Check if column already has data entries
+        entries = db.collection('kpi_custom_entries')\
+                    .where('columnId', '==', column_id).get()
+        entry_count = len(list(entries))
+
+        # Deactivate — NEVER delete if data exists
+        ref.update({
+            "isActive":      False,
+            "hasData":       entry_count > 0,
+            "deactivatedAt": firestore.SERVER_TIMESTAMP,
+            "deactivatedBy": session['uid'],
+        })
+
+        msg = (
+            f"Column deactivated. "
+            f"{entry_count} historical "
+            f"{'entry' if entry_count == 1 else 'entries'} preserved."
+            if entry_count > 0
+            else "Column deactivated."
+        )
+
+        return jsonify({
+            "message":      msg,
+            "columnId":     column_id,
+            "entryCount":   entry_count,
+            "dataPreserved": entry_count > 0
+        })
+
+    except Exception as e:
+        print(f"Error deactivating KPI column: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ── ROUTE 11: Reactivate a custom KPI column ───────────────────────────────────
+@kpi_bp.route('/api/kpi/custom-columns/<column_id>/reactivate',
+              methods=['PATCH'])
+def reactivate_custom_kpi_column(column_id):
+    """Reactivates a previously deactivated custom KPI column."""
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    if session['role'] not in ['m1_manager', 'm2_manager']:
+        return jsonify({"error": "Access denied"}), 403
+
+    try:
+        db  = get_firestore_client()
+        ref = db.collection('kpi_custom_columns').document(column_id)
+        doc = ref.get()
+
+        if not doc.exists:
+            return jsonify({"error": "Column not found"}), 404
+
+        ref.update({"isActive": True})
+
+        return jsonify({
+            "message":  "Column reactivated successfully.",
+            "columnId": column_id
+        })
+
+    except Exception as e:
+        print(f"Error reactivating KPI column: {e}")
+        return jsonify({"error": str(e)}), 500

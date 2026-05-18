@@ -629,8 +629,7 @@ async function fetchM1CustomKpiColumns() {
 
     try {
 
-        const response = await fetch('/api/kpi/custom-columns');
-        const data = await response.json();
+const response = await fetch('/api/kpi/custom-columns/all');        const data = await response.json();
 
         if (!response.ok) {
             container.innerHTML =
@@ -667,9 +666,46 @@ async function fetchM1CustomKpiColumns() {
                 </td>
 
                 <td class="small text-muted">
-                    ${col.description || '—'}
-                </td>
-
+                                    ${col.description || '—'}
+                                </td>
+                               ${data.columns.map(col => `
+                            <tr style="${!col.isActive
+                                ? 'opacity:0.6; background:#fafafa;'
+                                : ''}">
+                                <td class="fw-semibold small">
+                                    ${col.columnName}
+                                    ${!col.isActive
+                                        ? '<span class="badge bg-secondary ms-1" style="font-size:0.65rem;">Inactive</span>'
+                                        : ''}
+                                </td>
+                                <td class="small text-muted">
+                                    ${col.dataType}
+                                </td>
+                                <td>
+                                    ${col.hasData
+                                        ? '<span class="badge bg-success">Yes</span>'
+                                        : '<span class="badge bg-secondary">No</span>'}
+                                </td>
+                                <td class="small text-muted">
+                                    ${col.description || '—'}
+                                </td>
+                                <td>
+                                    ${col.isActive
+                                        ? `<button
+                                                class="btn btn-sm btn-outline-warning py-0 px-2"
+                                                onclick="deactivateKpiColumn('${col.columnId}', '${col.columnName.replace(/'/g, "\\'")}')"
+                                                title="Deactivate — data preserved">
+                                                <i class="bi bi-eye-slash"></i>
+                                           </button>`
+                                        : `<button
+                                                class="btn btn-sm btn-outline-success py-0 px-2"
+                                                onclick="reactivateKpiColumn('${col.columnId}', '${col.columnName.replace(/'/g, "\\'")}')"
+                                                title="Reactivate">
+                                                <i class="bi bi-eye"></i>
+                                           </button>`
+                                    }
+                                </td>
+                            </tr>`).join('')}
                 <td>
                     <button class="btn btn-sm
                         btn-outline-warning py-0 px-2"
@@ -695,13 +731,12 @@ async function fetchM1CustomKpiColumns() {
 
                     <thead class="table-light">
 
-                        <tr>
-
+                       <tr>
                             <th>Column Name</th>
-                            <th>Data Type</th>
+                            <th>Type</th>
+                            <th>Has Data</th>
                             <th>Description</th>
                             <th>Actions</th>
-
                         </tr>
 
                     </thead>
@@ -905,4 +940,69 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('m1CustomKpiColumns')) {
         fetchM1CustomKpiColumns();
     }
+
+    // ── DEACTIVATE / REACTIVATE CUSTOM KPI COLUMN ─────────────────────────────────
+
+async function deactivateKpiColumn(columnId, columnName) {
+    const confirmed = confirm(
+        `Deactivate "${columnName}"?\n\n` +
+        `✅ All historical data will be preserved.\n` +
+        `✅ The column will be hidden from employees.\n` +
+        `✅ You can reactivate it later.\n\n` +
+        `SRS Compliance: Custom KPI columns are never deleted.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(
+            `/api/kpi/custom-columns/${columnId}/deactivate`, {
+            method:  'PATCH',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            // Refresh the column list
+            fetchM1CustomKpiColumns();
+            showKpiToast(
+                `Column deactivated. ${
+                    data.dataPreserved
+                        ? data.entryCount + ' entries preserved.'
+                        : 'No data was entered.'
+                }`,
+                'warning'
+            );
+        } else {
+            alert(data.error || 'Failed to deactivate column.');
+        }
+    } catch (error) {
+        alert('Network error. Please try again.');
+    }
+}
+
+
+async function reactivateKpiColumn(columnId, columnName) {
+    if (!confirm(`Reactivate "${columnName}"?`)) return;
+
+    try {
+        const response = await fetch(
+            `/api/kpi/custom-columns/${columnId}/reactivate`, {
+            method:  'PATCH',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            fetchM1CustomKpiColumns();
+            showKpiToast('Column reactivated!', 'success');
+        } else {
+            alert(data.error || 'Failed to reactivate.');
+        }
+    } catch (error) {
+        alert('Network error.');
+    }
+}
 });
