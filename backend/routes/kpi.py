@@ -20,69 +20,97 @@ def require_auth():
 
 
 # ── KPI CALCULATION ENGINE ─────────────────────────────────────────────────────
-
 def calculate_lead_measures(db, employee_uid, start_date, end_date):
     """
     Calculates all 5 lead measures for a given employee
-    within a date range using audit_logs and leads collections.
+    within a date range.
+
+    KEY FIX: Counts UNIQUE leads at each stage (not raw events).
+    This prevents rates from exceeding 100% when leads move
+    back and forth between stages.
 
     Lead Measures:
-    1. Outreach Count    — connection requests sent (stage_2 entries)
-    2. Connection Rate   — % of requests accepted (stage_2_1 / stage_2)
-    3. Message Count     — initial messages sent (stage_3 entries)
-    4. Reply Rate        — % of messages that got reply (stage_4 / stage_3)
-    5. Meeting Conv Rate — % of replies that became meetings (stage_7 / stage_4)
+    1. Outreach Count    — unique leads that reached stage_2
+    2. Connection Rate   — % of outreach leads that got connected (stage_2_1)
+    3. Message Count     — unique leads that reached stage_3
+    4. Reply Rate        — % of messages that got a reply (stage_4)
+    5. Meeting Conv Rate — % of replies that became meetings (stage_7)
     """
     try:
         logs_ref = db.collection('audit_logs')\
                      .where('employeeUid', '==', employee_uid).get()
 
-        # Count stage transitions within date range
-        stage_counts = {}
-        for log in logs_ref:
-            entry     = log.to_dict()
-            changed_at = entry.get('changedAt')
+        # Count UNIQUE leads per stage within date range
+        # Using sets to prevent double-counting same lead
+        stage_leads = {}
 
-            # Filter by date range
-            if changed_at and hasattr(changed_at, 'replace'):
-                log_date = changed_at.replace(tzinfo=timezone.utc)
-                if not (start_date <= log_date <= end_date):
+        for log in logs_ref:
+            entry      = log.to_dict()
+            changed_at = entry.get('changedAt')
+            lead_id    = entry.get('leadId')
+            to_stage   = entry.get('toStage')
+
+            if not lead_id or not to_stage:
+                continue
+
+            # Apply date range filter
+            if changed_at:
+                try:
+                    if hasattr(changed_at, 'tzinfo') and \
+                       changed_at.tzinfo is not None:
+                        log_date = changed_at
+                    else:
+                        log_date = changed_at.replace(
+                            tzinfo=timezone.utc)
+
+                    if not (start_date <= log_date <= end_date):
+                        continue
+                except Exception:
                     continue
 
-            to_stage = entry.get('toStage')
-            if to_stage:
-                stage_counts[to_stage] = stage_counts.get(to_stage, 0) + 1
+            # Add to set for this stage (sets auto-deduplicate)
+            if to_stage not in stage_leads:
+                stage_leads[to_stage] = set()
+            stage_leads[to_stage].add(lead_id)
 
-        # Extract counts
-        outreach_count  = stage_counts.get('stage_2', 0)
-        connected       = stage_counts.get('stage_2_1', 0)
-        message_count   = stage_counts.get('stage_3', 0)
-        replies         = stage_counts.get('stage_4', 0)
-        meetings        = stage_counts.get('stage_7', 0)
+        # Count unique leads at each key stage
+        outreach_count = len(stage_leads.get('stage_2',   set()))
+        connected      = len(stage_leads.get('stage_2_1', set()))
+        message_count  = len(stage_leads.get('stage_3',   set()))
+        replies        = len(stage_leads.get('stage_4',   set()))
+        meetings       = len(stage_leads.get('stage_7',   set()))
 
-        # Calculate rates safely
-        connection_rate  = round((connected / outreach_count * 100), 1) \
-                           if outreach_count > 0 else 0.0
-        reply_rate       = round((replies / message_count * 100), 1) \
-                           if message_count > 0 else 0.0
-        meeting_conv_rate = round((meetings / replies * 100), 1) \
-                            if replies > 0 else 0.0
+        # Calculate rates — capped at 100% (cannot exceed 100%)
+        connection_rate = round(
+            min((connected / outreach_count * 100), 100.0), 1
+        ) if outreach_count > 0 else 0.0
+
+        reply_rate = round(
+            min((replies / message_count * 100), 100.0), 1
+        ) if message_count > 0 else 0.0
+
+        meeting_conv_rate = round(
+            min((meetings / replies * 100), 100.0), 1
+        ) if replies > 0 else 0.0
 
         return {
-            "outreachCount":       outreach_count,
-            "connectionRate":      connection_rate,
-            "initialMessageCount": message_count,
-            "replyRate":           reply_rate,
+            "outreachCount":         outreach_count,
+            "connectionRate":        connection_rate,
+            "initialMessageCount":   message_count,
+            "replyRate":             reply_rate,
             "meetingConversionRate": meeting_conv_rate,
         }
 
     except Exception as e:
         print(f"Error calculating lead measures: {e}")
         return {
-            "outreachCount": 0, "connectionRate": 0.0,
-            "initialMessageCount": 0, "replyRate": 0.0,
+            "outreachCount": 0,
+            "connectionRate": 0.0,
+            "initialMessageCount": 0,
+            "replyRate": 0.0,
             "meetingConversionRate": 0.0
         }
+
 
 
 def calculate_lag_measures(db, employee_uid, start_date, end_date):

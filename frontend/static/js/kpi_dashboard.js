@@ -159,25 +159,39 @@ function renderKpiDashboard(data) {
     container.innerHTML = `
         <div class="row g-3">
             <div class="col-12">
-                <div class="d-flex gap-2 mb-3">
+                <div class="d-flex gap-2 align-items-center mb-3">
 
-                    <button class="btn btn-sm
-                        ${currentPeriod === 'monthly'
-                            ? 'btn-primary'
-                            : 'btn-outline-primary'}"
-                        onclick="fetchMyKpis('monthly')">
-                        This Month
-                    </button>
+    <span class="text-muted small me-2">Period:</span>
 
-                    <button class="btn btn-sm
-                        ${currentPeriod === 'weekly'
-                            ? 'btn-primary'
-                            : 'btn-outline-primary'}"
-                        onclick="fetchMyKpis('weekly')">
-                        This Week
-                    </button>
+    <button
+        class="btn btn-sm ${currentPeriod === 'monthly'
+            ? 'btn-primary'
+            : 'btn-outline-primary'}"
+        id="kpiMonthlyBtn"
+        onclick="switchKpiPeriod('monthly')">
+        📅 This Month
+    </button>
 
-                </div>
+    <button
+        class="btn btn-sm ${currentPeriod === 'weekly'
+            ? 'btn-primary'
+            : 'btn-outline-primary'}"
+        id="kpiWeeklyBtn"
+        onclick="switchKpiPeriod('weekly')">
+        📆 This Week
+    </button>
+
+    <span
+        class="badge bg-light text-dark border ms-2"
+        id="kpiPeriodLabel">
+
+        ${currentPeriod === 'monthly'
+            ? data.startDate + ' → ' + data.endDate
+            : 'Last 7 days'}
+
+    </span>
+
+</div>
             </div>
 
             <div class="col-12">${leadHtml}</div>
@@ -207,28 +221,28 @@ function buildKpiSection(
         const target =
             targets[key] !== undefined ? targets[key] : 0;
 
+        // Cap actual % KPIs at 100 for display too
+        const displayActual = def.unit === '%'
+            ? Math.min(actual, 100.0)
+            : actual;
+
         const pct = target > 0
-            ? Math.min(Math.round((actual / target) * 100), 100)
-            : 0;
+            ? Math.min(Math.round((displayActual / target) * 100), 100)
+            : (displayActual > 0 ? 50 : 0);
 
-        const barColor =
-            pct >= 100 ? '#1E8449'
-            : pct >= 70 ? '#9A7D0A'
-            : '#922B21';
+        const barColor = pct >= 100 ? '#1E8449'
+                       : pct >= 70  ? '#9A7D0A'
+                       : pct >= 40  ? '#E65100'
+                       : '#922B21';
 
-        const unit =
-            def.unit === '%' ? '%' : ` ${def.unit || ''}`;
-
-        const display =
-            def.unit === '%'
-                ? `${actual}%`
-                : `${actual}${unit}`;
-
-        const targetDisplay =
-            def.unit === '%'
-                ? `${target}%`
-                : `${target}${unit}`;
-
+        const unit   = def.unit === '%' ? '%' : ` ${def.unit || ''}`;
+        const display = def.unit === '%'
+            ? `${displayActual}%`
+            : `${displayActual}${unit}`;
+        const targetDisplay = def.unit === '%'
+            ? `${target}%`
+            : `${target}${unit}`;
+            
         return `
             <div class="col-md-6 col-lg-4">
                 <div class="card border-0 shadow-sm h-100">
@@ -925,6 +939,41 @@ function showKpiToast(message, type='success') {
     ).show();
 }
 
+// ── KPI PERIOD SWITCHER ───────────────────────────────────────────────────────
+function switchKpiPeriod(period) {
+    console.log('Switching KPI period to:', period);
+
+    // Update button styles immediately for visual feedback
+    const monthlyBtn = document.getElementById('kpiMonthlyBtn');
+    const weeklyBtn  = document.getElementById('kpiWeeklyBtn');
+
+    if (monthlyBtn && weeklyBtn) {
+        if (period === 'monthly') {
+            monthlyBtn.className = 'btn btn-sm btn-primary';
+            weeklyBtn.className  = 'btn btn-sm btn-outline-primary';
+        } else {
+            monthlyBtn.className = 'btn btn-sm btn-outline-primary';
+            weeklyBtn.className  = 'btn btn-sm btn-primary';
+        }
+    }
+
+    // Show loading state
+    const content = document.getElementById('kpiDashboardContent');
+    if (content) {
+        content.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary spinner-border-sm"></div>
+                <span class="ms-2 text-muted">
+                    Loading ${period === 'monthly'
+                        ? 'monthly'
+                        : 'weekly'} KPIs...
+                </span>
+            </div>`;
+    }
+
+    // Fetch with new period
+    fetchMyKpis(period);
+}
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {

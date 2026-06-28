@@ -686,61 +686,102 @@ function renderTeamTaskBreakdown(teams) {
             </table>
         </div>`;
 }
-// ── DATE RANGE FILTER ─────────────────────────────────────────────────────────
+
+// ── DATE RANGE FILTER (M2) ────────────────────────────────────────────────────
 let currentM2Period    = 'monthly';
 let currentM2StartDate = '';
 let currentM2EndDate   = '';
 
 
-function applyDateFilter(period) {
+async function applyDateFilter(period) {
+    console.log('M2 applying date filter:', period);
+
     currentM2Period    = period;
     currentM2StartDate = '';
     currentM2EndDate   = '';
 
     // Update button styles
-    ['filterMonthly', 'filterWeekly', 'filterCustom'].forEach(id => {
-        const btn = document.getElementById(id);
-        if (!btn) return;
-        btn.className = 'btn btn-outline-primary btn-sm';
+    const monthlyBtn = document.getElementById('filterMonthly');
+    const weeklyBtn  = document.getElementById('filterWeekly');
+    const customBtn  = document.getElementById('filterCustom');
+
+    [monthlyBtn, weeklyBtn, customBtn].forEach(btn => {
+        if (btn) btn.className = 'btn btn-outline-primary btn-sm';
     });
 
-    const activeId = period === 'monthly' ? 'filterMonthly' : 'filterWeekly';
-    const activeBtn = document.getElementById(activeId);
+    const activeBtn = period === 'monthly' ? monthlyBtn : weeklyBtn;
     if (activeBtn) activeBtn.className = 'btn btn-primary btn-sm';
 
     // Hide custom date row
     const customRow = document.getElementById('customDateRow');
     if (customRow) customRow.classList.add('d-none');
 
-    // Reload all data
-    fetchOrgSummary();
-    loadM2Charts(period, '', '');
+    // Show loading on charts
+    showChartLoading();
+
+    // Reload org summary stats
+    await fetchOrgSummary();
+
+    // Reload charts with new period
+    await loadM2Charts(period, '', '');
+}
+
+
+function showChartLoading() {
+    ['orgLeadBarChart', 'orgLagBarChart', 'orgFunnelChart'].forEach(id => {
+        const canvas = document.getElementById(id);
+        if (canvas && canvas.parentElement) {
+            canvas.parentElement.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary
+                                spinner-border-sm"></div>
+                    <p class="text-muted small mt-2 mb-0">
+                        Loading chart...
+                    </p>
+                </div>`;
+        }
+    });
 }
 
 
 function toggleCustomDateFilter() {
     const customRow = document.getElementById('customDateRow');
     if (!customRow) return;
+
+    const isHidden = customRow.classList.contains('d-none');
     customRow.classList.toggle('d-none');
 
-    ['filterMonthly', 'filterWeekly'].forEach(id => {
-        const btn = document.getElementById(id);
+    const monthlyBtn = document.getElementById('filterMonthly');
+    const weeklyBtn  = document.getElementById('filterWeekly');
+    const customBtn  = document.getElementById('filterCustom');
+
+    [monthlyBtn, weeklyBtn].forEach(btn => {
         if (btn) btn.className = 'btn btn-outline-primary btn-sm';
     });
 
-    const btn = document.getElementById('filterCustom');
-    if (btn) btn.className = 'btn btn-primary btn-sm';
+
+    if (customBtn) {
+        customBtn.className = isHidden
+            ? 'btn btn-primary btn-sm'
+            : 'btn btn-outline-primary btn-sm';
+    }
 }
 
 
-function applyCustomDateFilter() {
-    const start = document.getElementById('filterStartDate')?.value;
-    const end   = document.getElementById('filterEndDate')?.value;
+async function applyCustomDateFilter() {
+    const startInput = document.getElementById('filterStartDate');
+    const endInput   = document.getElementById('filterEndDate');
+
+    if (!startInput || !endInput) return;
+
+    const start = startInput.value;
+    const end   = endInput.value;
 
     if (!start || !end) {
-        alert('Please select both start and end dates.');
+        alert('Please select both a start date and an end date.');
         return;
     }
+
     if (start > end) {
         alert('Start date must be before end date.');
         return;
@@ -750,9 +791,21 @@ function applyCustomDateFilter() {
     currentM2StartDate = start;
     currentM2EndDate   = end;
 
-    loadM2Charts('custom', start, end);
-}
+    // Update button styles
+    ['filterMonthly', 'filterWeekly'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.className = 'btn btn-outline-primary btn-sm';
+    });
 
+    const customBtn = document.getElementById('filterCustom');
+    if (customBtn) customBtn.className = 'btn btn-primary btn-sm';
+
+    // Show loading
+    showChartLoading();
+
+    // Load charts with custom date range
+    await loadM2Charts('custom', start, end);
+}
 
 // ── LOAD ALL M2 CHARTS ────────────────────────────────────────────────────────
 async function loadM2Charts(period='monthly', startDate='', endDate='') {
@@ -769,6 +822,8 @@ async function renderOrgKpiCharts(period, startDate, endDate) {
             url += `&startDate=${startDate}&endDate=${endDate}`;
         }
 
+        console.log('Fetching org KPI summary:', url);
+
         const response = await fetch(url);
         const data     = await response.json();
 
@@ -777,10 +832,32 @@ async function renderOrgKpiCharts(period, startDate, endDate) {
             return;
         }
 
-        // Lead measures bar chart
-        const leadKeys   = [
-            'outreachCount', 'initialMessageCount'
-        ];
+        console.log('Org KPI data received:', data);
+
+        // ── Rebuild Lead Measures chart canvas ────────────────────────────────
+        const leadContainer = document.getElementById(
+            'orgLeadBarChart')?.parentElement;
+        if (leadContainer) {
+            leadContainer.innerHTML =
+                '<canvas id="orgLeadBarChart"></canvas>';
+        }
+
+        // ── Rebuild Lag Measures chart canvas ─────────────────────────────────
+        const lagContainer = document.getElementById(
+            'orgLagBarChart')?.parentElement;
+        if (lagContainer) {
+            lagContainer.innerHTML =
+                '<canvas id="orgLagBarChart"></canvas>';
+        }
+
+        const periodLabel = period === 'monthly'
+            ? 'This Month'
+            : period === 'weekly'
+            ? 'This Week'
+            : `${startDate} to ${endDate}`;
+
+        // ── Lead Measures Bar Chart ───────────────────────────────────────────
+        const leadKeys   = ['outreachCount', 'initialMessageCount'];
         const leadLabels = ['Outreach Count', 'Messages Sent'];
         const leadValues = leadKeys.map(
             k => data.orgLeadMeasures?.[k] || 0
@@ -790,23 +867,23 @@ async function renderOrgKpiCharts(period, startDate, endDate) {
             'orgLeadBarChart',
             leadLabels,
             [{
-                label:      'Total (All Employees)',
-                data:       leadValues,
-                color:      '#2E75B633',
-                borderColor:'#2E75B6'
+                label:       `All Employees — ${periodLabel}`,
+                data:        leadValues,
+                color:       '#2E75B633',
+                borderColor: '#2E75B6'
             }],
-            'Lead Activity — Org Total',
+            `Lead Activity — ${periodLabel}`,
             ''
         );
 
-        // Lag measures bar chart
+        // ── Lag Measures Bar Chart ────────────────────────────────────────────
         const lagKeys   = [
             'meetingsScheduled', 'meetingsCompleted',
-            'interestedLeads', 'warmLeadsNurtured'
+            'interestedLeads',   'warmLeadsNurtured'
         ];
         const lagLabels = [
             'Mtg Scheduled', 'Mtg Completed',
-            'Interested', 'Warm Leads'
+            'Interested',    'Warm Leads'
         ];
         const lagValues = lagKeys.map(
             k => data.orgLagMeasures?.[k] || 0
@@ -816,16 +893,44 @@ async function renderOrgKpiCharts(period, startDate, endDate) {
             'orgLagBarChart',
             lagLabels,
             [{
-                label:      'Total (All Employees)',
-                data:       lagValues,
-                color:      '#1E844933',
-                borderColor:'#1E8449'
+                label:       `All Employees — ${periodLabel}`,
+                data:        lagValues,
+                color:       '#1E844933',
+                borderColor: '#1E8449'
             }],
-            'Pipeline Outcomes — Org Total',
+            `Pipeline Outcomes — ${periodLabel}`,
             ''
         );
 
+        // Show period confirmation
+        showFilterConfirmation(periodLabel, data.employeeCount || 0);
+
     } catch (error) {
         console.error('Error rendering org KPI charts:', error);
+    }
+}
+
+
+function showFilterConfirmation(periodLabel, employeeCount) {
+    const existing = document.getElementById('filterConfirmation');
+    if (existing) existing.remove();
+
+    const orgView = document.getElementById('orgView');
+    if (!orgView) return;
+
+    const div = document.createElement('div');
+    div.id        = 'filterConfirmation';
+    div.className = 'alert alert-info alert-dismissible py-2 mt-2';
+    div.innerHTML = `
+        <i class="bi bi-funnel me-2"></i>
+        Showing data for <strong>${periodLabel}</strong>
+        across <strong>${employeeCount} employee(s)</strong>
+        <button type="button" class="btn-close py-2"
+                data-bs-dismiss="alert"></button>`;
+
+    // Insert after the date filter bar
+    const filterBar = orgView.querySelector('.card.border-0.shadow-sm.mb-3');
+    if (filterBar) {
+        filterBar.after(div);
     }
 }

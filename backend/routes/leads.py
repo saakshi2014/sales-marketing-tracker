@@ -406,16 +406,17 @@ def get_team_members():
 @leads_bp.route('/api/leads/<lead_id>', methods=['DELETE'])
 def delete_lead(lead_id):
     """
-    Permanently deletes a lead and its audit logs.
-    Only M1 Managers and M2 Managers can delete leads.
+    Deletes a lead and its audit logs permanently.
+    - Employee: can delete ONLY their own leads
+    - M1 Manager: can delete any lead in their team
+    - M2 Manager: can delete any lead in the organisation
     """
     auth_error = require_auth()
     if auth_error:
         return auth_error
 
+    uid  = session['uid']
     role = session['role']
-    if role not in ['m1_manager', 'm2_manager']:
-        return jsonify({"error": "Only managers can delete leads"}), 403
 
     try:
         db       = get_firestore_client()
@@ -425,21 +426,50 @@ def delete_lead(lead_id):
         if not lead_doc.exists:
             return jsonify({"error": "Lead not found"}), 404
 
+        lead_data = lead_doc.to_dict()
+
+        # Access control
+        if role == 'employee':
+            # Employee can only delete their OWN leads
+            if lead_data.get('employeeUid') != uid:
+                return jsonify({
+                    "error": "You can only delete your own leads"
+                }), 403
+
+        elif role == 'm1_manager':
+            # M1 can only delete leads in their team
+            user_doc = db.collection('users').document(uid).get()
+            team_id  = user_doc.to_dict().get('teamId', '')
+            if lead_data.get('teamId') != team_id:
+                return jsonify({
+                    "error": "You can only delete leads from your team"
+                }), 403
+
+        # M2 can delete any lead — no extra check needed
+
+        lead_name = lead_data.get('name', 'Unknown')
+
         # Delete all audit logs for this lead
-        logs = db.collection('audit_logs')\
+        logs = db.collection('audit_logs') \
                  .where('leadId', '==', lead_id).get()
+
+        deleted_logs = 0
         for log in logs:
             log.reference.delete()
+            deleted_logs += 1
 
         # Delete the lead itself
         lead_ref.delete()
 
-        return jsonify({"message": "Lead deleted successfully"})
+        return jsonify({
+            "message": f"Lead '{lead_name}' deleted successfully",
+            "leadId": lead_id,
+            "logsDeleted": deleted_logs
+        })
 
     except Exception as e:
         print(f"Error deleting lead: {e}")
         return jsonify({"error": str(e)}), 500
-
 
 # ── ROUTE 8: Archive / Unarchive a lead ───────────────────────────────────────
 @leads_bp.route('/api/leads/<lead_id>/archive', methods=['PATCH'])

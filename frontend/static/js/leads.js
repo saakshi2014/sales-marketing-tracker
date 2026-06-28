@@ -170,6 +170,13 @@ function renderLeadsTable(leads) {
                                     ? 'Unarchive' : 'Archive'}">
                             <i class="bi bi-archive"></i>
                         </button>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-2"
+        onclick="deleteLead(
+            '${lead.leadId}',
+            '${escapeHtml(lead.name)}')"
+        title="Delete lead permanently">
+    <i class="bi bi-trash"></i>
+</button>
                     </div>
                 </td>
             </tr>`;
@@ -804,6 +811,41 @@ async function submitBulkImport() {
     } finally {
         btn.disabled  = false;
         btn.innerHTML = '<i class="bi bi-upload me-1"></i>Import Leads';
+    }
+}
+// ── DELETE LEAD ───────────────────────────────────────────────────────────────
+async function deleteLead(leadId, leadName) {
+    if (!confirm(
+        `⚠️ Permanently delete "${leadName}"?\n\n` +
+        `This will also delete all stage history for this lead.\n` +
+        `This action CANNOT be undone.\n\n` +
+        `Click OK to confirm deletion.`
+    )) return;
+
+    try {
+        const response = await fetch(`/api/leads/${leadId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            // Close detail panel if open
+            closeLeadDetail();
+
+            // Refresh table
+            await fetchLeads();
+
+            showToast(`Lead "${leadName}" deleted permanently.`, 'danger');
+        } else {
+            if (response.status === 403) {
+                alert('Only managers can delete leads.\nYou can Archive this lead instead.');
+            } else {
+                alert(data.error || 'Failed to delete lead.');
+            }
+        }
+    } catch (error) {
+        alert('Network error. Please try again.');
     }
 }
 // ── INITIALISE ON PAGE LOAD ───────────────────────────────────────────────────

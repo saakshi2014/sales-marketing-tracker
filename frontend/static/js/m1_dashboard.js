@@ -152,16 +152,27 @@ function renderTeamTable(leads) {
                 </td>
                 <td class="text-muted small">${lead.createdAt}</td>
                 <td>
-                    <div class="d-flex gap-1">
-                        ${linkedinBtn}
-                        <button class="btn btn-sm btn-outline-info py-0 px-2"
-                            onclick="openHistory(
-                                '${lead.leadId}',
-                                '${escapeHtml(lead.name)}')"
-                            title="View History">
-                            <i class="bi bi-clock-history"></i>
-                        </button>
-                    </div>
+                   <div class="d-flex gap-1">
+    ${linkedinBtn}
+
+    <button
+        class="btn btn-sm btn-outline-info py-0 px-2"
+        onclick="openHistory(
+            '${lead.leadId}',
+            '${escapeHtml(lead.name)}')"
+        title="View History">
+        <i class="bi bi-clock-history"></i>
+    </button>
+
+    <button
+        class="btn btn-sm btn-outline-danger py-0 px-2"
+        onclick="deleteTeamLead(
+            '${lead.leadId}',
+            '${escapeHtml(lead.name)}')"
+        title="Delete lead permanently">
+        <i class="bi bi-trash"></i>
+    </button>
+</div>
                 </td>
             </tr>`;
     }).join('');
@@ -414,6 +425,46 @@ function showTableError(message) {
     }
 }
 
+// ── DELETE LEAD (M1 Manager) ──────────────────────────────────────────────────
+async function deleteTeamLead(leadId, leadName) {
+    if (!confirm(
+        `⚠️ Permanently delete "${leadName}"?\n\n` +
+        `This will also delete all stage history.\n` +
+        `This action CANNOT be undone.\n\n` +
+        `Click OK to confirm.`
+    )) return;
+
+    try {
+        const response = await fetch(`/api/leads/${leadId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            await fetchTeamLeads();
+            showToast(`Lead "${leadName}" deleted.`, 'danger');
+        } else {
+            alert(data.error || 'Failed to delete lead.');
+        }
+    } catch (error) {
+        alert('Network error. Please try again.');
+    }
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('taskToast');
+    if (!toast) return;
+
+    toast.querySelector('.toast-body').textContent = message;
+
+    toast.className =
+        `toast align-items-center text-white bg-${type} border-0`;
+
+    new bootstrap.Toast(toast, {
+        delay: 3000
+    }).show();
+}
 
 // ── INITIALISE ON PAGE LOAD ───────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
