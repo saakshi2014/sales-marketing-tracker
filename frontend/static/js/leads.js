@@ -219,6 +219,26 @@ async function submitAddLead() {
         return;
     }
 
+    // Validate phone number — must be exactly 10 digits
+    if (phone) {
+        const phoneClean = phone.replace(/[\s\-()]/g, '');
+        if (!/^\d{10}$/.test(phoneClean)) {
+            errorEl.textContent = 'Phone number must contain exactly 10 digits.';
+            errorEl.classList.remove('d-none');
+            return;
+        }
+    }
+
+    // Validate email format
+    if (email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            errorEl.textContent = 'Please enter a valid email address.';
+            errorEl.classList.remove('d-none');
+            return;
+        }
+    }
+
     errorEl.classList.add('d-none');
 
     const submitBtn = document.getElementById('submitAddLead');
@@ -787,7 +807,9 @@ async function submitBulkImport() {
             // Refresh leads table
             await fetchLeads();
             showToast(
-                `Imported ${data.imported} leads successfully!`,
+                `Imported ${data.imported} leads. ` +
+                `${data.duplicates || 0} duplicates and ` +
+                `${data.skipped || 0} invalid rows were skipped.`,
                 'success'
             );
         } else {
@@ -899,6 +921,25 @@ async function submitChangeRequest() {
         errorEl.textContent = 'Please enter the new value.';
         errorEl.classList.remove('d-none');
         return;
+    }
+
+    // Validate based on which field is being changed
+    if (field === 'phone') {
+        const phoneClean = newValue.replace(/[\s\-()]/g, '');
+        if (!/^\d{10}$/.test(phoneClean)) {
+            errorEl.textContent = 'Phone number must contain exactly 10 digits.';
+            errorEl.classList.remove('d-none');
+            return;
+        }
+    }
+
+    if (field === 'email') {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(newValue)) {
+            errorEl.textContent = 'Please enter a valid email address.';
+            errorEl.classList.remove('d-none');
+            return;
+        }
     }
 
     errorEl.classList.add('d-none');

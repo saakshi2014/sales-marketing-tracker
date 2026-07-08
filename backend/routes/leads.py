@@ -10,7 +10,60 @@ import uuid
 from datetime import datetime
 
 leads_bp = Blueprint('leads', __name__)
+import re
 
+# ── VALIDATION HELPERS ───────────────────────────────────────────────────────
+PHONE_REGEX = re.compile(r'^\d{10}$')
+EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+
+
+def clean_phone(phone):
+    """
+    Strips all non-digit characters, then removes a leading Indian
+    country code (+91 / 91 / 0) if present, leaving just the 10-digit
+    number for comparison and validation.
+    """
+    digits = re.sub(r'\D', '', phone or '')  # keep digits only, drop +, spaces, -, ()
+    if len(digits) == 12 and digits.startswith('91'):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith('0'):
+        digits = digits[1:]
+    return digits
+
+
+def validate_phone(phone):
+    """Returns an error string if invalid, else None. Empty phone is allowed."""
+    if not phone:
+        return None
+    cleaned = clean_phone(phone)
+    if not PHONE_REGEX.match(cleaned):
+        return "Phone number must contain exactly 10 digits (with or without +91 country code)."
+    return None
+
+
+def validate_email_format(email):
+    if not email:
+        return None
+    if not EMAIL_REGEX.match(email):
+        return "Please enter a valid email address (e.g. name@example.com)."
+    return None
+
+
+def find_duplicate_lead(db, uid, phone, company):
+    if not phone or not company:
+        return None
+
+    phone_clean   = clean_phone(phone)
+    company_clean = company.strip().lower()
+
+    existing = db.collection('leads').where('employeeUid', '==', uid).stream()
+    for doc in existing:
+        d = doc.to_dict()
+        existing_phone   = clean_phone(d.get('phone', '') or '')
+        existing_company = (d.get('company') or '').strip().lower()
+        if existing_phone == phone_clean and existing_company == company_clean:
+            return d.get('name', 'Unknown')
+    return None
 
 # ── HELPER: Check authentication ───────────────────────────────────────────────
 def require_auth():
@@ -22,19 +75,6 @@ def require_auth():
 # ── ROUTE 1: Create a new lead ─────────────────────────────────────────────────
 @leads_bp.route('/api/leads', methods=['POST'])
 def create_lead():
-    """
-    Creates a new lead in Firestore.
-    Only employees and M1 managers can create leads.
-
-    Request body:
-    {
-        "name":        "John Smith",
-        "company":     "Acme Corp",
-        "email":       "john@acme.com",
-        "phone":       "+91 9876543210",
-        "linkedinUrl": "https://linkedin.com/in/johnsmith"
-    }
-    """
     auth_error = require_auth()
     if auth_error:
         return auth_error
@@ -43,15 +83,26 @@ def create_lead():
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    # Validate required fields
-    name = data.get('name', '').strip()
+    name    = data.get('name', '').strip()
+    company = data.get('company', '').strip()
+    email   = data.get('email', '').strip()
+    phone   = data.get('phone', '').strip()
+
     if not name:
         return jsonify({"error": "Lead name is required"}), 400
 
-    uid    = session['uid']
-    role   = session['role']
+    # ── VALIDATION ──────────────────────────────────────────────────────────
+    phone_error = validate_phone(phone)
+    if phone_error:
+        return jsonify({"error": phone_error}), 400
 
-    # Determine teamId based on role
+    email_error = validate_email_format(email)
+    if email_error:
+        return jsonify({"error": email_error}), 400
+
+    uid  = session['uid']
+    role = session['role']
+
     db       = get_firestore_client()
     user_doc = db.collection('users').document(uid).get()
     if not user_doc.exists:
@@ -60,29 +111,33 @@ def create_lead():
     user_data = user_doc.to_dict()
     team_id   = user_data.get('teamId', 'team_001')
 
-    # Generate unique lead ID
+    # ── DUPLICATE CHECK ─────────────────────────────────────────────────────
+    dup_name = find_duplicate_lead(db, uid, phone, company)
+    if dup_name:
+        return jsonify({
+            "error": f"This lead already exists in your pipeline as "
+                     f"'{dup_name}' (same phone number and company)."
+        }), 409
+
     lead_id = str(uuid.uuid4())
 
-    # Build the lead document
     lead = {
         "leadId":       lead_id,
         "employeeUid":  uid,
         "teamId":       team_id,
         "name":         name,
-        "company":      data.get('company', '').strip(),
-        "email":        data.get('email', '').strip(),
-        "phone":        data.get('phone', '').strip(),
+        "company":      company,
+        "email":        email,
+        "phone":        phone,
         "linkedinUrl":  data.get('linkedinUrl', '').strip(),
-        "currentStage": "stage_1_1",  # Always starts at Qualified – Pending Outreach
+        "currentStage": "stage_1_1",
         "isArchived":   False,
         "createdAt":    firestore.SERVER_TIMESTAMP,
         "updatedAt":    firestore.SERVER_TIMESTAMP
     }
 
-    # Save to Firestore
     db.collection('leads').document(lead_id).set(lead)
 
-    # Write first audit log entry
     log_id = str(uuid.uuid4())
     db.collection('audit_logs').document(log_id).set({
         "logId":       log_id,
@@ -97,7 +152,7 @@ def create_lead():
     return jsonify({
         "message": "Lead created successfully",
         "leadId":  lead_id,
-        "lead":    {
+        "lead": {
             "leadId":       lead_id,
             "name":         lead['name'],
             "company":      lead['company'],
@@ -109,7 +164,6 @@ def create_lead():
             "isArchived":   False,
         }
     }), 201
-
 
 # ── ROUTE 2: Get all leads for current user ────────────────────────────────────
 @leads_bp.route('/api/leads', methods=['GET'])
@@ -215,10 +269,6 @@ def get_leads():
 # ── ROUTE 3: Update lead details ───────────────────────────────────────────────
 @leads_bp.route('/api/leads/<lead_id>', methods=['PATCH'])
 def update_lead(lead_id):
-    """
-    Updates lead details (name, company, email, phone, linkedinUrl).
-    Does NOT change the pipeline stage — that is a separate route.
-    """
     auth_error = require_auth()
     if auth_error:
         return auth_error
@@ -226,6 +276,17 @@ def update_lead(lead_id):
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
+
+    # ── VALIDATION (only if these fields are present) ──────────────────────
+    if 'phone' in data:
+        phone_error = validate_phone(data.get('phone', '').strip())
+        if phone_error:
+            return jsonify({"error": phone_error}), 400
+
+    if 'email' in data:
+        email_error = validate_email_format(data.get('email', '').strip())
+        if email_error:
+            return jsonify({"error": email_error}), 400
 
     try:
         db       = get_firestore_client()
@@ -235,7 +296,6 @@ def update_lead(lead_id):
         if not lead_doc.exists:
             return jsonify({"error": "Lead not found"}), 404
 
-        # Only allow updating these fields
         allowed_fields = ['name', 'company', 'email', 'phone', 'linkedinUrl']
         update_data    = {k: v for k, v in data.items() if k in allowed_fields}
         update_data['updatedAt'] = firestore.SERVER_TIMESTAMP
@@ -247,7 +307,6 @@ def update_lead(lead_id):
     except Exception as e:
         print(f"Error updating lead: {e}")
         return jsonify({"error": str(e)}), 500
-
 
 # ── ROUTE 4: Change pipeline stage ────────────────────────────────────────────
 @leads_bp.route('/api/leads/<lead_id>/stage', methods=['PATCH'])
@@ -803,18 +862,10 @@ def get_all_teams():
         print(f"Error fetching teams: {e}")
         return jsonify({"error": str(e)}), 500
 
-    # ── ROUTE 10: Bulk import leads from CSV ───────────────────────────────────────
+
+# ── ROUTE 10: Bulk import leads from CSV ───────────────────────────────────────
 @leads_bp.route('/api/leads/bulk-import', methods=['POST'])
 def bulk_import_leads():
-    """
-    Imports multiple leads from a CSV file upload.
-    Accepts multipart/form-data with a 'file' field.
-
-    CSV format (required columns):
-    name, company, email, phone, linkedinUrl
-
-    Returns a summary of imported/skipped/failed rows.
-    """
     auth_error = require_auth()
     if auth_error:
         return auth_error
@@ -841,7 +892,6 @@ def bulk_import_leads():
         content = file.read().decode('utf-8-sig')
         reader  = csv.DictReader(io.StringIO(content))
 
-        # Validate headers
         required_cols = {'name'}
         if not reader.fieldnames:
             return jsonify({"error": "CSV file is empty"}), 400
@@ -849,34 +899,72 @@ def bulk_import_leads():
         headers_lower = {h.lower().strip() for h in reader.fieldnames}
         missing = required_cols - headers_lower
         if missing:
-            return jsonify({
-                "error": f"Missing required column: {missing}"
-            }), 400
+            return jsonify({"error": f"Missing required column: {missing}"}), 400
 
-        # Get user's teamId
         user_doc = db.collection('users').document(uid).get()
         team_id  = user_doc.to_dict().get('teamId', 'team_001')
 
-        imported = 0
-        skipped  = 0
-        errors   = []
+        # ── Preload existing leads for this employee (for duplicate check) ──
+        existing_leads = db.collection('leads')\
+                            .where('employeeUid', '==', uid).stream()
+        seen_pairs = set()
+        for doc in existing_leads:
+            d = doc.to_dict()
+            p = clean_phone(d.get('phone', '') or '')
+            c = (d.get('company') or '').strip().lower()
+            if p and c:
+                seen_pairs.add((p, c))
 
-        # Process each row
+        imported   = 0
+        skipped    = 0
+        duplicates = 0
+        errors     = []
+
         batch      = db.batch()
         batch_size = 0
-        MAX_BATCH  = 450  # Firestore batch limit is 500
+        MAX_BATCH  = 450
 
         for row_num, row in enumerate(reader, start=2):
             try:
-                # Normalize keys
                 row_clean = {k.lower().strip(): v.strip()
                              for k, v in row.items() if k}
 
-                name = row_clean.get('name', '').strip()
+                name    = row_clean.get('name', '').strip()
+                company = row_clean.get('company', '').strip()
+                email   = row_clean.get('email', '').strip()
+                phone   = row_clean.get('phone', '').strip()
+
                 if not name:
                     skipped += 1
                     errors.append(f"Row {row_num}: Name is empty — skipped")
                     continue
+
+                phone_error = validate_phone(phone)
+                if phone_error:
+                    skipped += 1
+                    errors.append(f"Row {row_num} ({name}): {phone_error}")
+                    continue
+
+                email_error = validate_email_format(email)
+                if email_error:
+                    skipped += 1
+                    errors.append(f"Row {row_num} ({name}): {email_error}")
+                    continue
+
+                phone_clean   = clean_phone(phone)
+                company_clean = company.strip().lower()
+
+                if phone_clean and company_clean and \
+                   (phone_clean, company_clean) in seen_pairs:
+                    duplicates += 1
+                    errors.append(
+                        f"Row {row_num} ({name}): Duplicate — same phone "
+                        f"and company already exists — skipped"
+                    )
+                    continue
+
+                if phone_clean and company_clean:
+                    seen_pairs.add((phone_clean, company_clean))
 
                 lead_id = str(uuid.uuid4())
                 lead = {
@@ -884,9 +972,9 @@ def bulk_import_leads():
                     "employeeUid":  uid,
                     "teamId":       team_id,
                     "name":         name,
-                    "company":      row_clean.get('company', ''),
-                    "email":        row_clean.get('email', ''),
-                    "phone":        row_clean.get('phone', ''),
+                    "company":      company,
+                    "email":        email,
+                    "phone":        phone,
                     "linkedinUrl":  row_clean.get('linkedinurl', ''),
                     "currentStage": "stage_1_1",
                     "isArchived":   False,
@@ -897,7 +985,6 @@ def bulk_import_leads():
                 lead_ref = db.collection('leads').document(lead_id)
                 batch.set(lead_ref, lead)
 
-                # Also write audit log in batch
                 log_id  = str(uuid.uuid4())
                 log_ref = db.collection('audit_logs').document(log_id)
                 batch.set(log_ref, {
@@ -910,10 +997,9 @@ def bulk_import_leads():
                     "notes":       "Imported from CSV"
                 })
 
-                batch_size += 2  # lead + audit log
+                batch_size += 2
                 imported   += 1
 
-                # Commit batch every MAX_BATCH operations
                 if batch_size >= MAX_BATCH:
                     batch.commit()
                     batch      = db.batch()
@@ -921,19 +1007,19 @@ def bulk_import_leads():
 
             except Exception as row_error:
                 skipped += 1
-                errors.append(
-                    f"Row {row_num}: {str(row_error)}")
+                errors.append(f"Row {row_num}: {str(row_error)}")
 
-        # Commit remaining
         if batch_size > 0:
             batch.commit()
 
         return jsonify({
-            "message":  f"Import complete: {imported} imported, "
-                        f"{skipped} skipped",
-            "imported": imported,
-            "skipped":  skipped,
-            "errors":   errors[:10]  # Return first 10 errors only
+            "message":    f"Import complete: {imported} imported, "
+                          f"{duplicates} duplicates skipped, "
+                          f"{skipped} invalid rows skipped",
+            "imported":   imported,
+            "duplicates": duplicates,
+            "skipped":    skipped,
+            "errors":     errors[:15]
         })
 
     except UnicodeDecodeError:
@@ -1010,9 +1096,22 @@ def submit_change_request():
         current_val = data.get('current_value')
         new_val     = data.get('new_value')
 
-        # Only allow these 3 fields
+       
+
+            # Only allow these 3 fields
         if field not in ['email', 'phone', 'linkedinUrl']:
             return jsonify({'error': 'Invalid field'}), 400
+
+        # ── VALIDATE THE NEW VALUE ──────────────────────────────────────────
+        if field == 'phone':
+            phone_error = validate_phone(new_val.strip() if new_val else '')
+            if phone_error:
+                return jsonify({'error': phone_error}), 400
+
+        if field == 'email':
+            email_error = validate_email_format(new_val.strip() if new_val else '')
+            if email_error:
+                return jsonify({'error': email_error}), 400
 
         # Get user info
         user_doc  = db.collection('users').document(uid).get()
