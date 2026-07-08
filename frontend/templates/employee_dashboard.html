@@ -437,53 +437,171 @@
                         data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <input type="hidden" id="editLeadId">
-                <div id="editLeadError"
-                     class="alert alert-danger d-none"></div>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">
-                            Full Name <span class="text-danger">*</span>
-                        </label>
-                        <input type="text" id="editLeadName"
-                               class="form-control">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Company</label>
-                        <input type="text" id="editLeadCompany"
-                               class="form-control">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Email</label>
-                        <input type="email" id="editLeadEmail"
-                               class="form-control">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold">Phone</label>
-                        <input type="text" id="editLeadPhone"
-                               class="form-control">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label fw-semibold">
-                            LinkedIn URL
-                        </label>
-                        <input type="url" id="editLeadLinkedin"
-                               class="form-control">
-                    </div>
-                </div>
+    <input type="hidden" id="editLeadId">
+    <div id="editLeadError"
+         class="alert alert-danger d-none"></div>
+    <div class="row g-3">
+
+        <!-- NAME — locked -->
+        <div class="col-md-6">
+            <label class="form-label fw-semibold">
+                Full Name <span class="text-danger">*</span>
+            </label>
+            <input type="text" id="editLeadName"
+                   class="form-control">
+            <small class="text-muted">
+                🔒 Name cannot be changed after creation
+            </small>
+        </div>
+
+        <!-- COMPANY — locked -->
+        <div class="col-md-6">
+            <label class="form-label fw-semibold">Company</label>
+            <input type="text" id="editLeadCompany"
+                   class="form-control">
+            <small class="text-muted">
+                🔒 Company cannot be changed after creation
+            </small>
+        </div>
+
+        <!-- EMAIL — request change -->
+        <div class="col-md-6">
+            <label class="form-label fw-semibold">Email</label>
+            <div class="d-flex align-items-center gap-2">
+                <span id="display-email"
+                      class="form-control bg-light text-muted"
+                      style="cursor:default; min-height:38px;
+                             display:flex; align-items:center;">—</span>
+                <button type="button"
+                        class="btn btn-outline-primary btn-sm"
+                        id="btn-request-email"
+                        onclick="openChangeRequest(this)">
+                    Request Change
+                </button>
             </div>
+        </div>
+
+        <!-- PHONE — request change -->
+        <div class="col-md-6">
+            <label class="form-label fw-semibold">Phone</label>
+            <div class="d-flex align-items-center gap-2">
+                <span id="display-phone"
+                      class="form-control bg-light text-muted"
+                      style="cursor:default; min-height:38px;
+                             display:flex; align-items:center;">—</span>
+                <button type="button"
+                        class="btn btn-outline-primary btn-sm"
+                        id="btn-request-phone"
+                        onclick="openChangeRequest(this)">
+                    Request Change
+                </button>
+            </div>
+        </div>
+
+        <!-- LINKEDIN — request change -->
+        <div class="col-12">
+            <label class="form-label fw-semibold">LinkedIn URL</label>
+            <div class="d-flex align-items-center gap-2">
+                <span id="display-linkedin"
+                      class="form-control bg-light text-muted"
+                      style="cursor:default; min-height:38px;
+                             display:flex; align-items:center;">—</span>
+                <button type="button"
+                        class="btn btn-outline-primary btn-sm"
+                        id="btn-request-linkedin"
+                        onclick="openChangeRequest(this)">
+                    Request Change
+                </button>
+            </div>
+        </div>
+
+    </div>
+</div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary"
                         data-bs-dismiss="modal">Cancel</button>
-                <button type="button" id="submitEditLead"
+                <button type="button"
+        class="btn btn-secondary"
+        data-bs-dismiss="modal">
+    Close
+</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── CHANGE REQUEST MODAL ──────────────────────────────────────────────── -->
+<div class="modal fade" id="changeRequestModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"
+                 style="background:#1a4a7a; color:white;">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-pencil-square me-2"></i>
+                    Request Contact Info Change
+                </h5>
+                <button type="button"
+                        class="btn-close btn-close-white"
+                        data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="cr-lead-id">
+                <input type="hidden" id="cr-field">
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-semibold">
+                        Lead
+                    </label>
+                    <p id="cr-lead-name-display"
+                       class="fw-bold mb-0 text-dark"></p>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-semibold">
+                        Field to Change
+                    </label>
+                    <p id="cr-field-label"
+                       class="fw-semibold mb-0 text-primary"></p>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-semibold">
+                        Current Value
+                    </label>
+                    <p id="cr-current-value"
+                       class="form-control bg-light text-muted mb-0"></p>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">
+                        New Value
+                        <span class="text-danger">*</span>
+                    </label>
+                    <input type="text"
+                           id="cr-new-value"
+                           class="form-control"
+                           placeholder="Enter the correct new value...">
+                </div>
+                <div id="cr-error"
+                     class="alert alert-danger py-2 d-none"></div>
+                <div class="alert alert-info py-2 mb-0"
+                     style="font-size:0.85rem;">
+                    <i class="bi bi-info-circle me-1"></i>
+                    This request will be sent to your manager for approval.
+                    The change will only be applied after approval.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-secondary"
+                        data-bs-dismiss="modal">Cancel</button>
+                <button type="button"
+                        id="cr-submit-btn"
                         class="btn btn-primary fw-semibold"
-                        onclick="submitEditLead()">
-                    <i class="bi bi-check-lg me-1"></i>Save Changes
+                        onclick="submitChangeRequest()">
+                    <i class="bi bi-send me-1"></i>Submit Request
                 </button>
             </div>
         </div>
     </div>
 </div>
+<!-- ── END CHANGE REQUEST MODAL ───────────────────────────────────────────── -->
 
 <!-- ── SUCCESS TOAST ───────────────────────────────────────────────────────── -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">

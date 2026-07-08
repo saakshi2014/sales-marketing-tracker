@@ -431,77 +431,66 @@ function showToast(message, type = 'success') {
 }
 // ── EDIT LEAD ─────────────────────────────────────────────────────────────────
 function openEditLead(leadId) {
-    // Find the lead from our cached data
     const lead = allLeads.find(l => l.leadId === leadId);
     if (!lead) return;
 
-    // Fill the edit form
-    document.getElementById('editLeadId').value          = leadId;
-    document.getElementById('editLeadName').value        = lead.name || '';
-    document.getElementById('editLeadCompany').value     = lead.company || '';
-    document.getElementById('editLeadEmail').value       = lead.email || '';
-    document.getElementById('editLeadPhone').value       = lead.phone || '';
-    document.getElementById('editLeadLinkedin').value    = lead.linkedinUrl || '';
+    // Hidden field — still needed
+    document.getElementById('editLeadId').value = leadId;
+
+    // NAME — lock it
+    const nameField = document.getElementById('editLeadName');
+    nameField.value = lead.name || '';
+    nameField.disabled = true;
+    nameField.style.backgroundColor = '#f0f0f0';
+    nameField.style.cursor = 'not-allowed';
+
+    // COMPANY — lock it
+    const companyField = document.getElementById('editLeadCompany');
+    companyField.value = lead.company || '';
+    companyField.disabled = true;
+    companyField.style.backgroundColor = '#f0f0f0';
+    companyField.style.cursor = 'not-allowed';
+
+    // EMAIL — show as text, attach data to button
+    document.getElementById('display-email').textContent = lead.email || '—';
+    const btnEmail = document.getElementById('btn-request-email');
+    btnEmail.setAttribute('data-lead-id', leadId);
+    btnEmail.setAttribute('data-lead-name', lead.name);
+    btnEmail.setAttribute('data-field', 'email');
+    btnEmail.setAttribute('data-current', lead.email || '');
+
+    // PHONE — show as text, attach data to button
+    document.getElementById('display-phone').textContent = lead.phone || '—';
+    const btnPhone = document.getElementById('btn-request-phone');
+    btnPhone.setAttribute('data-lead-id', leadId);
+    btnPhone.setAttribute('data-lead-name', lead.name);
+    btnPhone.setAttribute('data-field', 'phone');
+    btnPhone.setAttribute('data-current', lead.phone || '');
+
+    // LINKEDIN — show as text, attach data to button
+    document.getElementById('display-linkedin').textContent = lead.linkedinUrl || '—';
+    const btnLinkedin = document.getElementById('btn-request-linkedin');
+    btnLinkedin.setAttribute('data-lead-id', leadId);
+    btnLinkedin.setAttribute('data-lead-name', lead.name);
+    btnLinkedin.setAttribute('data-field', 'linkedinUrl');
+    btnLinkedin.setAttribute('data-current', lead.linkedinUrl || '');
 
     // Clear error
     document.getElementById('editLeadError').classList.add('d-none');
 
     // Open modal
-    const modal = new bootstrap.Modal(
-        document.getElementById('editLeadModal')
-    );
+    const modal = new bootstrap.Modal(document.getElementById('editLeadModal'));
     modal.show();
 }
 
 
 async function submitEditLead() {
-    const leadId      = document.getElementById('editLeadId').value;
-    const name        = document.getElementById('editLeadName').value.trim();
-    const company     = document.getElementById('editLeadCompany').value.trim();
-    const email       = document.getElementById('editLeadEmail').value.trim();
-    const phone       = document.getElementById('editLeadPhone').value.trim();
-    const linkedinUrl = document.getElementById('editLeadLinkedin').value.trim();
-    const errorEl     = document.getElementById('editLeadError');
-
-    if (!name) {
-        errorEl.textContent = 'Lead name is required.';
-        errorEl.classList.remove('d-none');
-        return;
-    }
-
-    errorEl.classList.add('d-none');
-
-    const submitBtn       = document.getElementById('submitEditLead');
-    submitBtn.disabled    = true;
-    submitBtn.textContent = 'Saving...';
-
-    try {
-        const response = await fetch(`/api/leads/${leadId}`, {
-            method:  'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ name, company, email, phone, linkedinUrl })
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            const modal = bootstrap.Modal.getInstance(
-                document.getElementById('editLeadModal')
-            );
-            modal.hide();
-            await fetchLeads();
-            showToast('Lead updated successfully!', 'success');
-        } else {
-            errorEl.textContent = data.error || 'Failed to update lead.';
-            errorEl.classList.remove('d-none');
-        }
-    } catch (error) {
-        errorEl.textContent = 'Network error. Please try again.';
-        errorEl.classList.remove('d-none');
-    } finally {
-        submitBtn.disabled    = false;
-        submitBtn.textContent = 'Save Changes';
-    }
+    // Name and company are locked — nothing to save from edit modal now
+    // Just close the modal
+    const modal = bootstrap.Modal.getInstance(
+        document.getElementById('editLeadModal')
+    );
+    modal.hide();
 }
 
 
@@ -864,4 +853,265 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (stageFilter) {
         stageFilter.addEventListener('change', filterLeads);
     }
+
+// ── CHANGE REQUEST — Open popup ───────────────────────────────────────────────
+function openChangeRequest(btn) {
+    const leadId      = btn.getAttribute('data-lead-id');
+    const leadName    = btn.getAttribute('data-lead-name');
+    const field       = btn.getAttribute('data-field');
+    const currentVal  = btn.getAttribute('data-current');
+
+    document.getElementById('cr-lead-id').value            = leadId;
+    document.getElementById('cr-field').value              = field;
+    document.getElementById('cr-lead-name-display').textContent = leadName;
+    document.getElementById('cr-current-value').textContent = currentVal || '(empty)';
+    document.getElementById('cr-new-value').value          = '';
+    document.getElementById('cr-error').classList.add('d-none');
+
+    document.getElementById('cr-field-label').textContent =
+        field === 'email'       ? 'Email Address' :
+        field === 'phone'       ? 'Phone Number'  :
+        field === 'linkedinUrl' ? 'LinkedIn URL'  : field;
+
+    // Close edit modal first, then open change request modal
+    const editModal = bootstrap.Modal.getInstance(
+        document.getElementById('editLeadModal')
+    );
+    if (editModal) editModal.hide();
+
+    setTimeout(() => {
+        const crModal = new bootstrap.Modal(
+            document.getElementById('changeRequestModal')
+        );
+        crModal.show();
+    }, 400);
+}
+
+
+// ── CHANGE REQUEST — Submit to backend ───────────────────────────────────────
+async function submitChangeRequest() {
+    const leadId     = document.getElementById('cr-lead-id').value;
+    const field      = document.getElementById('cr-field').value;
+    const newValue   = document.getElementById('cr-new-value').value.trim();
+    const errorEl    = document.getElementById('cr-error');
+
+    if (!newValue) {
+        errorEl.textContent = 'Please enter the new value.';
+        errorEl.classList.remove('d-none');
+        return;
+    }
+
+    errorEl.classList.add('d-none');
+
+    const submitBtn       = document.getElementById('cr-submit-btn');
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Submitting...';
+
+    try {
+        const response = await fetch('/api/leads/change-request', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+                lead_id:       leadId,
+                field:         field,
+                current_value: document.getElementById('cr-current-value').textContent,
+                new_value:     newValue
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            bootstrap.Modal.getInstance(
+                document.getElementById('changeRequestModal')
+            ).hide();
+            showToast('Change request submitted to your manager.', 'success');
+        } else {
+            errorEl.textContent = data.error || 'Failed to submit request.';
+            errorEl.classList.remove('d-none');
+        }
+    } catch (err) {
+        errorEl.textContent = 'Network error. Please try again.';
+        errorEl.classList.remove('d-none');
+    } finally {
+        submitBtn.disabled    = false;
+        submitBtn.textContent = 'Submit Request';
+    }
+}
+// ── CHANGE REQUEST — Open popup ───────────────────────────────────────────────
+function openChangeRequest(btn) {
+    const leadId     = btn.getAttribute('data-lead-id');
+    const leadName   = btn.getAttribute('data-lead-name');
+    const field      = btn.getAttribute('data-field');
+    const currentVal = btn.getAttribute('data-current');
+
+    document.getElementById('cr-lead-id').value                 = leadId;
+    document.getElementById('cr-field').value                   = field;
+    document.getElementById('cr-lead-name-display').textContent = leadName;
+    document.getElementById('cr-current-value').textContent     = currentVal || '(empty)';
+    document.getElementById('cr-new-value').value               = '';
+    document.getElementById('cr-error').classList.add('d-none');
+
+    document.getElementById('cr-field-label').textContent =
+        field === 'email'       ? 'Email Address' :
+        field === 'phone'       ? 'Phone Number'  :
+        field === 'linkedinUrl' ? 'LinkedIn URL'  : field;
+
+    // Close edit modal first
+    const editModal = bootstrap.Modal.getInstance(
+        document.getElementById('editLeadModal')
+    );
+    if (editModal) editModal.hide();
+
+    // Open change request modal after short delay
+    setTimeout(() => {
+        const crModal = new bootstrap.Modal(
+            document.getElementById('changeRequestModal')
+        );
+        crModal.show();
+    }, 400);
+}
+
+
+// ── CHANGE REQUEST — Submit to backend ───────────────────────────────────────
+async function submitChangeRequest() {
+    const leadId   = document.getElementById('cr-lead-id').value;
+    const field    = document.getElementById('cr-field').value;
+    const newValue = document.getElementById('cr-new-value').value.trim();
+    const errorEl  = document.getElementById('cr-error');
+
+    if (!newValue) {
+        errorEl.textContent = 'Please enter the new value.';
+        errorEl.classList.remove('d-none');
+        return;
+    }
+
+    errorEl.classList.add('d-none');
+
+    const submitBtn       = document.getElementById('cr-submit-btn');
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Submitting...';
+
+    try {
+        const response = await fetch('/api/leads/change-request', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+                lead_id:       leadId,
+                field:         field,
+                current_value: document.getElementById(
+                                   'cr-current-value').textContent,
+                new_value:     newValue
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            bootstrap.Modal.getInstance(
+                document.getElementById('changeRequestModal')
+            ).hide();
+            showToast(
+                'Change request submitted to your manager!',
+                'success'
+            );
+        } else {
+            errorEl.textContent = data.error || 'Failed to submit.';
+            errorEl.classList.remove('d-none');
+        }
+    } catch (err) {
+        errorEl.textContent = 'Network error. Please try again.';
+        errorEl.classList.remove('d-none');
+    } finally {
+        submitBtn.disabled    = false;
+        submitBtn.textContent = 'Submit Request';
+    }
+}
 });
+
+// ── CHANGE REQUEST — Open popup ───────────────────────────────────────────────
+function openChangeRequest(btn) {
+    const leadId     = btn.getAttribute('data-lead-id');
+    const leadName   = btn.getAttribute('data-lead-name');
+    const field      = btn.getAttribute('data-field');
+    const currentVal = btn.getAttribute('data-current');
+
+    document.getElementById('cr-lead-id').value                 = leadId;
+    document.getElementById('cr-field').value                   = field;
+    document.getElementById('cr-lead-name-display').textContent = leadName;
+    document.getElementById('cr-current-value').textContent     = currentVal || '(empty)';
+    document.getElementById('cr-new-value').value               = '';
+    document.getElementById('cr-error').classList.add('d-none');
+
+    document.getElementById('cr-field-label').textContent =
+        field === 'email'       ? 'Email Address' :
+        field === 'phone'       ? 'Phone Number'  :
+        field === 'linkedinUrl' ? 'LinkedIn URL'  : field;
+
+    const editModal = bootstrap.Modal.getInstance(
+        document.getElementById('editLeadModal')
+    );
+    if (editModal) editModal.hide();
+
+    setTimeout(() => {
+        const crModal = new bootstrap.Modal(
+            document.getElementById('changeRequestModal')
+        );
+        crModal.show();
+    }, 400);
+}
+
+// ── CHANGE REQUEST — Submit to backend ───────────────────────────────────────
+async function submitChangeRequest() {
+    const leadId   = document.getElementById('cr-lead-id').value;
+    const field    = document.getElementById('cr-field').value;
+    const newValue = document.getElementById('cr-new-value').value.trim();
+    const errorEl  = document.getElementById('cr-error');
+
+    if (!newValue) {
+        errorEl.textContent = 'Please enter the new value.';
+        errorEl.classList.remove('d-none');
+        return;
+    }
+
+    errorEl.classList.add('d-none');
+
+    const submitBtn       = document.getElementById('cr-submit-btn');
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Submitting...';
+
+    try {
+        const response = await fetch('/api/leads/change-request', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+                lead_id:       leadId,
+                field:         field,
+                current_value: document.getElementById(
+                                   'cr-current-value').textContent,
+                new_value:     newValue
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            bootstrap.Modal.getInstance(
+                document.getElementById('changeRequestModal')
+            ).hide();
+            showToast(
+                'Change request submitted to your manager!',
+                'success'
+            );
+        } else {
+            errorEl.textContent = data.error || 'Failed to submit.';
+            errorEl.classList.remove('d-none');
+        }
+    } catch (err) {
+        errorEl.textContent = 'Network error. Please try again.';
+        errorEl.classList.remove('d-none');
+    } finally {
+        submitBtn.disabled    = false;
+        submitBtn.textContent = 'Submit Request';
+    }
+}

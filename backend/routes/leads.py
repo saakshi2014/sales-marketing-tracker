@@ -990,3 +990,215 @@ def download_import_template():
                 'attachment; filename="leads_import_template.csv"'
         }
     )    
+
+ # ── SUBMIT CONTACT CHANGE REQUEST ────────────────────────────────────────────
+@leads_bp.route('/api/leads/change-request', methods=['POST'])
+def submit_change_request():
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    uid  = session['uid']
+    role = session['role']
+
+    try:
+        db = get_firestore_client()
+
+        data        = request.get_json()
+        lead_id     = data.get('lead_id')
+        field       = data.get('field')
+        current_val = data.get('current_value')
+        new_val     = data.get('new_value')
+
+        # Only allow these 3 fields
+        if field not in ['email', 'phone', 'linkedinUrl']:
+            return jsonify({'error': 'Invalid field'}), 400
+
+        # Get user info
+        user_doc  = db.collection('users').document(uid).get()
+        user_data = user_doc.to_dict()
+        team_id   = user_data.get('teamId', '')
+        requested_by = user_data.get('email', session.get('email', ''))
+
+        # Get lead name
+        lead_doc  = db.collection('leads').document(lead_id).get()
+        if not lead_doc.exists:
+            return jsonify({'error': 'Lead not found'}), 404
+        lead_name = lead_doc.to_dict().get('name', 'Unknown Lead')
+
+        # Save change request
+        req_ref = db.collection('contact_change_requests').document()
+        req_ref.set({
+            'lead_id':       lead_id,
+            'lead_name':     lead_name,
+            'field':         field,
+            'current_value': current_val,
+            'new_value':     new_val,
+            'requested_by':  requested_by,
+            'requested_uid': uid,
+            'team_id':       team_id,
+            'status':        'pending',
+            'created_at':    firestore.SERVER_TIMESTAMP,
+            'reviewed_by':   None,
+            'reviewed_at':   None
+        })
+
+        # Notify M1 Manager of this team
+        teams_ref = db.collection('teams')\
+                      .where('teamId', '==', team_id)\
+                      .limit(1).stream()
+
+        for team in teams_ref:
+            m1_uid = team.to_dict().get('m1ManagerUid', '')
+            if m1_uid:
+                notif_ref = db.collection('notifications').document()
+                notif_ref.set({
+                    'userId':     m1_uid,
+                    'message':    f"{requested_by} requested to change "
+                                  f"{field} of lead '{lead_name}'",
+                    'type':       'change_request',
+                    'isRead':     False,
+                    'createdAt':  firestore.SERVER_TIMESTAMP
+                })
+
+        return jsonify({'message': 'Request submitted successfully'}), 200
+
+    except Exception as e:
+        print(f"submit_change_request error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ── GET PENDING REQUESTS — M1 Manager ────────────────────────────────────────
+@leads_bp.route('/api/leads/change-requests/pending', methods=['GET'])
+def get_pending_change_requests():
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    uid  = session['uid']
+    role = session['role']
+
+    if role not in ['m1_manager', 'm2_manager']:
+        return jsonify({'error': 'Access denied'}), 403
+
+    try:
+        db = get_firestore_client()
+
+        user_doc = db.collection('users').document(uid).get()
+        team_id  = user_doc.to_dict().get('teamId', '')
+
+        # Fetch ALL pending requests and filter manually
+        # This avoids field name mismatch issues
+        all_reqs = db.collection('contact_change_requests')\
+                     .where('status', '==', 'pending')\
+                     .stream()
+
+        results = []
+        for r in all_reqs:
+            d = r.to_dict()
+
+            # Match either team_id or teamId field
+            req_team = d.get('team_id') or d.get('teamId', '')
+
+            # M1 sees only their team, M2 sees all
+            if role == 'm1_manager' and req_team != team_id:
+                continue
+
+            d['request_id'] = r.id
+            if d.get('created_at'):
+                try:
+                    d['created_at'] = d['created_at'].strftime(
+                        '%d %b %Y %H:%M'
+                    )
+                except Exception:
+                    d['created_at'] = str(d['created_at'])
+            results.append(d)
+
+        return jsonify(results), 200
+
+    except Exception as e:
+        print(f"get_pending_change_requests error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ── APPROVE OR REJECT — M1 Manager ───────────────────────────────────────────
+@leads_bp.route(
+    '/api/leads/change-request/<request_id>/review',
+    methods=['POST']
+)
+def review_change_request(request_id):
+    auth_error = require_auth()
+    if auth_error:
+        return auth_error
+
+    uid  = session['uid']
+    role = session['role']
+
+    if role not in ['m1_manager', 'm2_manager']:
+        return jsonify({'error': 'Access denied'}), 403
+
+    try:
+        db = get_firestore_client()
+
+        data   = request.get_json()
+        action = data.get('action')
+
+        if action not in ['approve', 'reject']:
+            return jsonify({'error': 'Invalid action'}), 400
+
+        req_ref  = db.collection('contact_change_requests')\
+                     .document(request_id)
+        req_doc  = req_ref.get()
+
+        if not req_doc.exists:
+            return jsonify({'error': 'Request not found'}), 404
+
+        req_data = req_doc.to_dict()
+
+        # Get reviewer email
+        reviewer_doc  = db.collection('users').document(uid).get()
+        reviewed_by   = reviewer_doc.to_dict().get('email', uid)
+
+        if action == 'approve':
+            # Apply the change to the lead
+            db.collection('leads')\
+              .document(req_data['lead_id'])\
+              .update({
+                  req_data['field']: req_data['new_value'],
+                  'updatedAt':       firestore.SERVER_TIMESTAMP
+              })
+            status    = 'approved'
+            notif_msg = (
+                f"Your request to change {req_data['field']} "
+                f"for '{req_data['lead_name']}' was approved."
+            )
+        else:
+            status    = 'rejected'
+            notif_msg = (
+                f"Your request to change {req_data['field']} "
+                f"for '{req_data['lead_name']}' was rejected."
+            )
+
+        # Update request status
+        req_ref.update({
+            'status':      status,
+            'reviewed_by': reviewed_by,
+            'reviewed_at': firestore.SERVER_TIMESTAMP
+        })
+
+        # Notify the employee
+        emp_uid = req_data.get('requested_uid', '')
+        if emp_uid:
+            db.collection('notifications').document().set({
+                'userId':    emp_uid,
+                'message':   notif_msg,
+                'type':      'change_request_result',
+                'isRead':    False,
+                'createdAt': firestore.SERVER_TIMESTAMP
+            })
+
+        return jsonify({'message': f'Request {status} successfully'}), 200
+
+    except Exception as e:
+        print(f"review_change_request error: {e}")
+        return jsonify({'error': str(e)}), 500

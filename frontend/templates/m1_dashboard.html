@@ -267,6 +267,53 @@
             </div>
         </div>
     </div>
+    <!-- ===== CONTACT CHANGE REQUESTS ===== -->
+<div class="card mt-4" id="change-requests-section">
+    <div class="card-header d-flex justify-content-between
+                align-items-center"
+         style="background:#f8f9fa;">
+        <h6 class="mb-0 fw-semibold">
+            📋 Contact Change Requests
+            <span id="cr-pending-badge"
+                  class="badge bg-danger ms-2"
+                  style="display:none;"></span>
+        </h6>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="loadChangeRequests()">
+            🔄 Refresh
+        </button>
+    </div>
+    <div class="card-body p-0">
+        <div id="cr-loading"
+             class="text-center p-3 text-muted"
+             style="display:none;">
+            Loading...
+        </div>
+        <div id="cr-empty"
+             class="text-center p-3 text-muted"
+             style="display:none;">
+            ✅ No pending contact change requests.
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0"
+                   id="cr-table"
+                   style="display:none;">
+                <thead class="table-light">
+                    <tr>
+                        <th>Lead</th>
+                        <th>Field</th>
+                        <th>Current Value</th>
+                        <th>Requested Value</th>
+                        <th>Requested By</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="cr-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<!-- ===== END CONTACT CHANGE REQUESTS ===== -->
 </div>
 
 <!-- ── CREATE TASK MODAL ───────────────────────────────────────────────────── -->
