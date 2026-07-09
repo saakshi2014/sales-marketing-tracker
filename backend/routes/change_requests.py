@@ -11,7 +11,7 @@ from firebase_admin import firestore
 import uuid
 from datetime import datetime, timezone
 
-change_requests_bp = Blueprint('change_requests', __name__)
+change_requests_bp = Blueprint('contact_change_requests', __name__)
 
 
 def require_auth():
@@ -97,7 +97,7 @@ def submit_change_request(lead_id):
             }), 403
 
         # Check if there is already a pending request for this lead
-        existing = db.collection('change_requests')\
+        existing = db.collection('contact_change_requests')\
                      .where('leadId', '==', lead_id)\
                      .where('status', '==', 'pending').get()
         if list(existing):
@@ -150,7 +150,7 @@ def submit_change_request(lead_id):
             "reviewNote":       None,
         }
 
-        db.collection('change_requests')\
+        db.collection('contact_change_requests')\
           .document(request_id).set(change_request)
 
         # Send notification to M1 Manager
@@ -182,35 +182,39 @@ def submit_change_request(lead_id):
 # ── ROUTE 2: Get change requests (M1 sees pending, employee sees own) ──────────
 @change_requests_bp.route('/api/change-requests', methods=['GET'])
 def get_change_requests():
-    """
-    M1 Manager: sees all pending requests for their team.
-    Employee: sees their own requests.
-    """
     auth_error = require_auth()
     if auth_error:
         return auth_error
 
-    uid  = session['uid']
-    role = session['role']
+    uid    = session['uid']
+    role   = session['role']
 
     try:
         db = get_firestore_client()
 
-        if role == 'm1_manager':
-            requests_ref = db.collection('change_requests')\
-                             .where('m1ManagerUid', '==', uid).get()
-        elif role == 'm2_manager':
-            requests_ref = db.collection('change_requests').get()
-        else:
-            requests_ref = db.collection('change_requests')\
-                             .where('employeeUid', '==', uid).get()
+        # Fetch ALL requests and filter manually
+        # This avoids any field name mismatch issues
+        all_docs = db.collection('contact_change_requests').stream()
 
         status_filter = request.args.get('status', '')
         requests_list = []
 
-        for doc in requests_ref:
+        for doc in all_docs:
             r = doc.to_dict()
 
+            # Role-based filtering
+            if role == 'employee':
+                if r.get('employeeUid') != uid:
+                    continue
+            elif role == 'm1_manager':
+                # M1 sees requests from their team
+                user_doc = db.collection('users').document(uid).get()
+                team_id  = user_doc.to_dict().get('teamId', '')
+                if r.get('teamId') != team_id:
+                    continue
+            # M2 sees everything — no filter
+
+            # Status filter
             if status_filter and r.get('status') != status_filter:
                 continue
 
@@ -220,16 +224,17 @@ def get_change_requests():
             else:
                 created_str = 'Recently'
 
-            reviewed_at = r.get('reviewedAt')
+            reviewed_at  = r.get('reviewedAt')
             reviewed_str = ''
             if reviewed_at and hasattr(reviewed_at, 'strftime'):
                 reviewed_str = reviewed_at.strftime('%d %b %Y %H:%M')
 
             requests_list.append({
-                "requestId":        r.get('requestId'),
-                "leadId":           r.get('leadId'),
+                "requestId":        r.get('requestId') or doc.id,
+                "leadId":           r.get('leadId', ''),
                 "leadName":         r.get('leadName', ''),
                 "employeeName":     r.get('employeeName', ''),
+                "employeeUid":      r.get('employeeUid', ''),
                 "requestedChanges": r.get('requestedChanges', {}),
                 "currentValues":    r.get('currentValues', {}),
                 "reason":           r.get('reason', ''),
@@ -237,14 +242,17 @@ def get_change_requests():
                 "createdAt":        created_str,
                 "reviewedAt":       reviewed_str,
                 "reviewNote":       r.get('reviewNote', ''),
+                "m1ManagerUid":     r.get('m1ManagerUid', ''),
+                "teamId":           r.get('teamId', ''),
             })
 
-        # Sort newest first
         requests_list.sort(
-            key=lambda x: x['createdAt'], reverse=True)
+            key=lambda x: x['createdAt'], reverse=True
+        )
 
         pending_count = sum(
-            1 for r in requests_list if r['status'] == 'pending')
+            1 for r in requests_list if r['status'] == 'pending'
+        )
 
         return jsonify({
             "requests":     requests_list,
@@ -253,7 +261,7 @@ def get_change_requests():
         })
 
     except Exception as e:
-        print(f"Error fetching change requests: {e}")
+        print(f"get_change_requests error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -283,7 +291,7 @@ def approve_change_request(request_id):
 
     try:
         db      = get_firestore_client()
-        req_ref = db.collection('change_requests').document(request_id)
+        req_ref = db.collection('contact_change_requests').document(request_id)
         req_doc = req_ref.get()
 
         if not req_doc.exists:
@@ -409,7 +417,7 @@ def reject_change_request(request_id):
 
     try:
         db      = get_firestore_client()
-        req_ref = db.collection('change_requests').document(request_id)
+        req_ref = db.collection('contact_change_requests').document(request_id)
         req_doc = req_ref.get()
 
         if not req_doc.exists:

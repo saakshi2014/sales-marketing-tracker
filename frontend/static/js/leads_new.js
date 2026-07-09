@@ -331,8 +331,9 @@ async function submitEditLead() {
         return;
     }
 
-    const btn = document.getElementById('submitEditLead');
-    btn.disabled = true;
+const submitBtn = document.getElementById('submitEditLead')
+    || document.getElementById('editLeadBtn');
+if (submitBtn) submitBtn.disabled = true;
 
     try {
         // Build requestedChanges object for the new change_requests route
@@ -359,7 +360,7 @@ async function submitEditLead() {
         errorEl.textContent = 'Network error. Please try again.';
         errorEl.classList.remove('d-none');
     } finally {
-        btn.disabled = false;
+        if (submitBtn) submitBtn.disabled = false;
     }
 }
 

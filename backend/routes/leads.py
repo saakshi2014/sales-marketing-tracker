@@ -10,60 +10,7 @@ import uuid
 from datetime import datetime
 
 leads_bp = Blueprint('leads', __name__)
-import re
 
-# ── VALIDATION HELPERS ───────────────────────────────────────────────────────
-PHONE_REGEX = re.compile(r'^\d{10}$')
-EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
-
-
-def clean_phone(phone):
-    """
-    Strips all non-digit characters, then removes a leading Indian
-    country code (+91 / 91 / 0) if present, leaving just the 10-digit
-    number for comparison and validation.
-    """
-    digits = re.sub(r'\D', '', phone or '')  # keep digits only, drop +, spaces, -, ()
-    if len(digits) == 12 and digits.startswith('91'):
-        digits = digits[2:]
-    elif len(digits) == 11 and digits.startswith('0'):
-        digits = digits[1:]
-    return digits
-
-
-def validate_phone(phone):
-    """Returns an error string if invalid, else None. Empty phone is allowed."""
-    if not phone:
-        return None
-    cleaned = clean_phone(phone)
-    if not PHONE_REGEX.match(cleaned):
-        return "Phone number must contain exactly 10 digits (with or without +91 country code)."
-    return None
-
-
-def validate_email_format(email):
-    if not email:
-        return None
-    if not EMAIL_REGEX.match(email):
-        return "Please enter a valid email address (e.g. name@example.com)."
-    return None
-
-
-def find_duplicate_lead(db, uid, phone, company):
-    if not phone or not company:
-        return None
-
-    phone_clean   = clean_phone(phone)
-    company_clean = company.strip().lower()
-
-    existing = db.collection('leads').where('employeeUid', '==', uid).stream()
-    for doc in existing:
-        d = doc.to_dict()
-        existing_phone   = clean_phone(d.get('phone', '') or '')
-        existing_company = (d.get('company') or '').strip().lower()
-        if existing_phone == phone_clean and existing_company == company_clean:
-            return d.get('name', 'Unknown')
-    return None
 
 # ── HELPER: Check authentication ───────────────────────────────────────────────
 def require_auth():
@@ -75,6 +22,19 @@ def require_auth():
 # ── ROUTE 1: Create a new lead ─────────────────────────────────────────────────
 @leads_bp.route('/api/leads', methods=['POST'])
 def create_lead():
+    """
+    Creates a new lead in Firestore.
+    Only employees and M1 managers can create leads.
+
+    Request body:
+    {
+        "name":        "John Smith",
+        "company":     "Acme Corp",
+        "email":       "john@acme.com",
+        "phone":       "+91 9876543210",
+        "linkedinUrl": "https://linkedin.com/in/johnsmith"
+    }
+    """
     auth_error = require_auth()
     if auth_error:
         return auth_error
@@ -83,63 +43,126 @@ def create_lead():
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    name    = data.get('name', '').strip()
-    company = data.get('company', '').strip()
-    email   = data.get('email', '').strip()
-    phone   = data.get('phone', '').strip()
+    # Validate required fields
+    import re
+
+    # Validate required fields
+    name  = data.get('name', '').strip()
+    email = data.get('email', '').strip()
+    phone = data.get('phone', '').strip()
 
     if not name:
         return jsonify({"error": "Lead name is required"}), 400
 
-    # ── VALIDATION ──────────────────────────────────────────────────────────
-    phone_error = validate_phone(phone)
-    if phone_error:
-        return jsonify({"error": phone_error}), 400
+    # ── Email format validation ────────────────────────────────────────────────
+    if email:
+        email_pattern = r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            return jsonify({
+                "error": "Invalid email format. "
+                         "Please enter a valid email address."
+            }), 400
 
-    email_error = validate_email_format(email)
-    if email_error:
-        return jsonify({"error": email_error}), 400
+    # ── Phone validation — exactly 10 digits ──────────────────────────────────
+    if phone:
+        phone_digits = re.sub(r'[\s\+\-\(\)]', '', phone)
+        if not phone_digits.isdigit():
+            return jsonify({
+                "error": "Phone number must contain only digits."
+            }), 400
+        if len(phone_digits) != 10:
+            return jsonify({
+                "error": f"Phone number must be exactly 10 digits. "
+                         f"You entered {len(phone_digits)} digits."
+            }), 400
 
-    uid  = session['uid']
-    role = session['role']
+    try:
+        db    = get_firestore_client()
+        uid   = session['uid']
+        role  = session['role']
 
-    db       = get_firestore_client()
-    user_doc = db.collection('users').document(uid).get()
-    if not user_doc.exists:
-        return jsonify({"error": "User profile not found"}), 404
+        # ── DUPLICATE LEAD DETECTION ───────────────────────────────────────────
+        # Check if a lead with the same email already exists in this team
+        user_doc = db.collection('users').document(uid).get()
+        team_id  = user_doc.to_dict().get('teamId', 'team_001') \
+                   if user_doc.exists else 'team_001'
 
-    user_data = user_doc.to_dict()
-    team_id   = user_data.get('teamId', 'team_001')
+        if email:
+            existing_email = db.collection('leads')\
+                               .where('teamId', '==', team_id)\
+                               .where('email', '==', email).get()
+            existing_email_list = list(existing_email)
+            if existing_email_list:
+                existing_name = existing_email_list[0].to_dict()\
+                                .get('name', 'Unknown')
+                return jsonify({
+                    "error": f"Duplicate lead detected! "
+                             f"A lead with email '{email}' already exists: "
+                             f"'{existing_name}'. "
+                             f"Please check your existing leads before "
+                             f"adding a new one.",
+                    "isDuplicate": True,
+                    "duplicateLeadName": existing_name
+                }), 409
 
-    # ── DUPLICATE CHECK ─────────────────────────────────────────────────────
-    dup_name = find_duplicate_lead(db, uid, phone, company)
-    if dup_name:
-        return jsonify({
-            "error": f"This lead already exists in your pipeline as "
-                     f"'{dup_name}' (same phone number and company)."
-        }), 409
+        if phone:
+            phone_digits_clean = re.sub(r'[\s\+\-\(\)]', '', phone)
+            # Search by last 10 digits
+            existing_phone = db.collection('leads')\
+                               .where('teamId', '==', team_id)\
+                               .get()
+            for lead_doc in existing_phone:
+                ld = lead_doc.to_dict()
+                existing_phone_clean = re.sub(
+                    r'[\s\+\-\(\)]', '',
+                    ld.get('phone', ''))
+                if existing_phone_clean and \
+                   existing_phone_clean[-10:] == phone_digits_clean:
+                    existing_name = ld.get('name', 'Unknown')
+                    return jsonify({
+                        "error": f"Duplicate lead detected! "
+                                 f"A lead with phone '{phone}' already "
+                                 f"exists: '{existing_name}'. "
+                                 f"Please check your existing leads.",
+                        "isDuplicate": True,
+                        "duplicateLeadName": existing_name
+                    }), 409
+  
 
-    lead_id = str(uuid.uuid4())
+        # Determine teamId based on role
+        db= get_firestore_client()
+        user_doc = db.collection('users').document(uid).get()
+        if not user_doc.exists:
+            return jsonify({"error": "User profile not found"}), 404
 
-    lead = {
+        user_data = user_doc.to_dict()
+        team_id   = user_data.get('teamId', 'team_001')
+
+        # Generate unique lead ID
+        lead_id = str(uuid.uuid4())
+
+        # Build the lead document
+        lead = {
         "leadId":       lead_id,
         "employeeUid":  uid,
         "teamId":       team_id,
         "name":         name,
-        "company":      company,
-        "email":        email,
-        "phone":        phone,
+        "company":      data.get('company', '').strip(),
+        "email":        data.get('email', '').strip(),
+        "phone":        data.get('phone', '').strip(),
         "linkedinUrl":  data.get('linkedinUrl', '').strip(),
-        "currentStage": "stage_1_1",
+        "currentStage": "stage_1_1",  # Always starts at Qualified – Pending Outreach
         "isArchived":   False,
         "createdAt":    firestore.SERVER_TIMESTAMP,
         "updatedAt":    firestore.SERVER_TIMESTAMP
-    }
+        }
 
-    db.collection('leads').document(lead_id).set(lead)
+        # Save to Firestore
+        db.collection('leads').document(lead_id).set(lead)
 
-    log_id = str(uuid.uuid4())
-    db.collection('audit_logs').document(log_id).set({
+        # Write first audit log entry
+        log_id = str(uuid.uuid4())
+        db.collection('audit_logs').document(log_id).set({
         "logId":       log_id,
         "leadId":      lead_id,
         "employeeUid": uid,
@@ -147,23 +170,28 @@ def create_lead():
         "toStage":     "stage_1_1",
         "changedAt":   firestore.SERVER_TIMESTAMP,
         "notes":       "Lead created"
-    })
+        })
 
-    return jsonify({
+        return jsonify({
         "message": "Lead created successfully",
         "leadId":  lead_id,
-        "lead": {
-            "leadId":       lead_id,
-            "name":         lead['name'],
-            "company":      lead['company'],
-            "email":        lead['email'],
-            "phone":        lead['phone'],
-            "linkedinUrl":  lead['linkedinUrl'],
-            "currentStage": "stage_1_1",
-            "stageName":    "Qualified – Pending Outreach",
-            "isArchived":   False,
+        "lead":    {
+        "leadId":       lead_id,
+        "name":         lead['name'],
+        "company":      lead['company'],
+        "email":        lead['email'],
+        "phone":        lead['phone'],
+        "linkedinUrl":  lead['linkedinUrl'],
+        "currentStage": "stage_1_1",
+        "stageName":    "Qualified – Pending Outreach",
+        "isArchived":   False,
         }
-    }), 201
+     }), 201 
+                        
+    except Exception as e:
+        print(f"Error creating lead: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 # ── ROUTE 2: Get all leads for current user ────────────────────────────────────
 @leads_bp.route('/api/leads', methods=['GET'])
@@ -269,6 +297,10 @@ def get_leads():
 # ── ROUTE 3: Update lead details ───────────────────────────────────────────────
 @leads_bp.route('/api/leads/<lead_id>', methods=['PATCH'])
 def update_lead(lead_id):
+    """
+    Updates lead details (name, company, email, phone, linkedinUrl).
+    Does NOT change the pipeline stage — that is a separate route.
+    """
     auth_error = require_auth()
     if auth_error:
         return auth_error
@@ -276,17 +308,6 @@ def update_lead(lead_id):
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
-
-    # ── VALIDATION (only if these fields are present) ──────────────────────
-    if 'phone' in data:
-        phone_error = validate_phone(data.get('phone', '').strip())
-        if phone_error:
-            return jsonify({"error": phone_error}), 400
-
-    if 'email' in data:
-        email_error = validate_email_format(data.get('email', '').strip())
-        if email_error:
-            return jsonify({"error": email_error}), 400
 
     try:
         db       = get_firestore_client()
@@ -296,6 +317,7 @@ def update_lead(lead_id):
         if not lead_doc.exists:
             return jsonify({"error": "Lead not found"}), 404
 
+        # Only allow updating these fields
         allowed_fields = ['name', 'company', 'email', 'phone', 'linkedinUrl']
         update_data    = {k: v for k, v in data.items() if k in allowed_fields}
         update_data['updatedAt'] = firestore.SERVER_TIMESTAMP
@@ -307,6 +329,7 @@ def update_lead(lead_id):
     except Exception as e:
         print(f"Error updating lead: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 # ── ROUTE 4: Change pipeline stage ────────────────────────────────────────────
 @leads_bp.route('/api/leads/<lead_id>/stage', methods=['PATCH'])
@@ -862,10 +885,18 @@ def get_all_teams():
         print(f"Error fetching teams: {e}")
         return jsonify({"error": str(e)}), 500
 
-
-# ── ROUTE 10: Bulk import leads from CSV ───────────────────────────────────────
+    # ── ROUTE 10: Bulk import leads from CSV ───────────────────────────────────────
 @leads_bp.route('/api/leads/bulk-import', methods=['POST'])
 def bulk_import_leads():
+    """
+    Imports multiple leads from a CSV file upload.
+    Accepts multipart/form-data with a 'file' field.
+
+    CSV format (required columns):
+    name, company, email, phone, linkedinUrl
+
+    Returns a summary of imported/skipped/failed rows.
+    """
     auth_error = require_auth()
     if auth_error:
         return auth_error
@@ -892,6 +923,7 @@ def bulk_import_leads():
         content = file.read().decode('utf-8-sig')
         reader  = csv.DictReader(io.StringIO(content))
 
+        # Validate headers
         required_cols = {'name'}
         if not reader.fieldnames:
             return jsonify({"error": "CSV file is empty"}), 400
@@ -899,92 +931,54 @@ def bulk_import_leads():
         headers_lower = {h.lower().strip() for h in reader.fieldnames}
         missing = required_cols - headers_lower
         if missing:
-            return jsonify({"error": f"Missing required column: {missing}"}), 400
+            return jsonify({
+                "error": f"Missing required column: {missing}"
+            }), 400
 
+        # Get user's teamId
         user_doc = db.collection('users').document(uid).get()
         team_id  = user_doc.to_dict().get('teamId', 'team_001')
 
-        # ── Preload existing leads for this employee (for duplicate check) ──
-        existing_leads = db.collection('leads')\
-                            .where('employeeUid', '==', uid).stream()
-        seen_pairs = set()
-        for doc in existing_leads:
-            d = doc.to_dict()
-            p = clean_phone(d.get('phone', '') or '')
-            c = (d.get('company') or '').strip().lower()
-            if p and c:
-                seen_pairs.add((p, c))
+        imported = 0
+        skipped  = 0
+        errors   = []
 
-        imported   = 0
-        skipped    = 0
-        duplicates = 0
-        errors     = []
-
+        # Process each row
         batch      = db.batch()
         batch_size = 0
-        MAX_BATCH  = 450
+        MAX_BATCH  = 450  # Firestore batch limit is 500
 
         for row_num, row in enumerate(reader, start=2):
             try:
+                # Normalize keys
                 row_clean = {k.lower().strip(): v.strip()
                              for k, v in row.items() if k}
 
-                name    = row_clean.get('name', '').strip()
-                company = row_clean.get('company', '').strip()
-                email   = row_clean.get('email', '').strip()
-                phone   = row_clean.get('phone', '').strip()
-
+                name = row_clean.get('name', '').strip()
                 if not name:
                     skipped += 1
                     errors.append(f"Row {row_num}: Name is empty — skipped")
                     continue
-
-                phone_error = validate_phone(phone)
-                if phone_error:
-                    skipped += 1
-                    errors.append(f"Row {row_num} ({name}): {phone_error}")
-                    continue
-
-                email_error = validate_email_format(email)
-                if email_error:
-                    skipped += 1
-                    errors.append(f"Row {row_num} ({name}): {email_error}")
-                    continue
-
-                phone_clean   = clean_phone(phone)
-                company_clean = company.strip().lower()
-
-                if phone_clean and company_clean and \
-                   (phone_clean, company_clean) in seen_pairs:
-                    duplicates += 1
-                    errors.append(
-                        f"Row {row_num} ({name}): Duplicate — same phone "
-                        f"and company already exists — skipped"
-                    )
-                    continue
-
-                if phone_clean and company_clean:
-                    seen_pairs.add((phone_clean, company_clean))
-
-                lead_id = str(uuid.uuid4())
-                lead = {
-                    "leadId":       lead_id,
-                    "employeeUid":  uid,
-                    "teamId":       team_id,
-                    "name":         name,
-                    "company":      company,
-                    "email":        email,
-                    "phone":        phone,
-                    "linkedinUrl":  row_clean.get('linkedinurl', ''),
-                    "currentStage": "stage_1_1",
-                    "isArchived":   False,
-                    "createdAt":    firestore.SERVER_TIMESTAMP,
-                    "updatedAt":    firestore.SERVER_TIMESTAMP,
+                    lead_id = str(uuid.uuid4())
+                    lead = {
+                        "leadId":       lead_id,
+                        "employeeUid":  uid,
+                        "teamId":       team_id,
+                        "name":         name,
+                        "company":      row_clean.get('company', ''),
+                        "email":        row_clean.get('email', ''),
+                        "phone":        row_clean.get('phone', ''),
+                        "linkedinUrl":  row_clean.get('linkedinurl', ''),
+                        "currentStage": "stage_1_1",
+                        "isArchived":   False,
+                        "createdAt":    firestore.SERVER_TIMESTAMP,
+                        "updatedAt":    firestore.SERVER_TIMESTAMP,
                 }
 
                 lead_ref = db.collection('leads').document(lead_id)
                 batch.set(lead_ref, lead)
 
+                # Also write audit log in batch
                 log_id  = str(uuid.uuid4())
                 log_ref = db.collection('audit_logs').document(log_id)
                 batch.set(log_ref, {
@@ -997,9 +991,10 @@ def bulk_import_leads():
                     "notes":       "Imported from CSV"
                 })
 
-                batch_size += 2
+                batch_size += 2  # lead + audit log
                 imported   += 1
 
+                # Commit batch every MAX_BATCH operations
                 if batch_size >= MAX_BATCH:
                     batch.commit()
                     batch      = db.batch()
@@ -1007,19 +1002,19 @@ def bulk_import_leads():
 
             except Exception as row_error:
                 skipped += 1
-                errors.append(f"Row {row_num}: {str(row_error)}")
+                errors.append(
+                    f"Row {row_num}: {str(row_error)}")
 
+        # Commit remaining
         if batch_size > 0:
             batch.commit()
 
         return jsonify({
-            "message":    f"Import complete: {imported} imported, "
-                          f"{duplicates} duplicates skipped, "
-                          f"{skipped} invalid rows skipped",
-            "imported":   imported,
-            "duplicates": duplicates,
-            "skipped":    skipped,
-            "errors":     errors[:15]
+            "message":  f"Import complete: {imported} imported, "
+                        f"{skipped} skipped",
+            "imported": imported,
+            "skipped":  skipped,
+            "errors":   errors[:10]  # Return first 10 errors only
         })
 
     except UnicodeDecodeError:
@@ -1074,230 +1069,4 @@ def download_import_template():
         headers={
             'Content-Disposition':
                 'attachment; filename="leads_import_template.csv"'
-        }
-    )    
-
- # ── SUBMIT CONTACT CHANGE REQUEST ────────────────────────────────────────────
-@leads_bp.route('/api/leads/change-request', methods=['POST'])
-def submit_change_request():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-
-    uid  = session['uid']
-    role = session['role']
-
-    try:
-        db = get_firestore_client()
-
-        data        = request.get_json()
-        lead_id     = data.get('lead_id')
-        field       = data.get('field')
-        current_val = data.get('current_value')
-        new_val     = data.get('new_value')
-
-       
-
-            # Only allow these 3 fields
-        if field not in ['email', 'phone', 'linkedinUrl']:
-            return jsonify({'error': 'Invalid field'}), 400
-
-        # ── VALIDATE THE NEW VALUE ──────────────────────────────────────────
-        if field == 'phone':
-            phone_error = validate_phone(new_val.strip() if new_val else '')
-            if phone_error:
-                return jsonify({'error': phone_error}), 400
-
-        if field == 'email':
-            email_error = validate_email_format(new_val.strip() if new_val else '')
-            if email_error:
-                return jsonify({'error': email_error}), 400
-
-        # Get user info
-        user_doc  = db.collection('users').document(uid).get()
-        user_data = user_doc.to_dict()
-        team_id   = user_data.get('teamId', '')
-        requested_by = user_data.get('email', session.get('email', ''))
-
-        # Get lead name
-        lead_doc  = db.collection('leads').document(lead_id).get()
-        if not lead_doc.exists:
-            return jsonify({'error': 'Lead not found'}), 404
-        lead_name = lead_doc.to_dict().get('name', 'Unknown Lead')
-
-        # Save change request
-        req_ref = db.collection('contact_change_requests').document()
-        req_ref.set({
-            'lead_id':       lead_id,
-            'lead_name':     lead_name,
-            'field':         field,
-            'current_value': current_val,
-            'new_value':     new_val,
-            'requested_by':  requested_by,
-            'requested_uid': uid,
-            'team_id':       team_id,
-            'status':        'pending',
-            'created_at':    firestore.SERVER_TIMESTAMP,
-            'reviewed_by':   None,
-            'reviewed_at':   None
-        })
-
-        # Notify M1 Manager of this team
-        teams_ref = db.collection('teams')\
-                      .where('teamId', '==', team_id)\
-                      .limit(1).stream()
-
-        for team in teams_ref:
-            m1_uid = team.to_dict().get('m1ManagerUid', '')
-            if m1_uid:
-                notif_ref = db.collection('notifications').document()
-                notif_ref.set({
-                    'userId':     m1_uid,
-                    'message':    f"{requested_by} requested to change "
-                                  f"{field} of lead '{lead_name}'",
-                    'type':       'change_request',
-                    'isRead':     False,
-                    'createdAt':  firestore.SERVER_TIMESTAMP
-                })
-
-        return jsonify({'message': 'Request submitted successfully'}), 200
-
-    except Exception as e:
-        print(f"submit_change_request error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ── GET PENDING REQUESTS — M1 Manager ────────────────────────────────────────
-@leads_bp.route('/api/leads/change-requests/pending', methods=['GET'])
-def get_pending_change_requests():
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-
-    uid  = session['uid']
-    role = session['role']
-
-    if role not in ['m1_manager', 'm2_manager']:
-        return jsonify({'error': 'Access denied'}), 403
-
-    try:
-        db = get_firestore_client()
-
-        user_doc = db.collection('users').document(uid).get()
-        team_id  = user_doc.to_dict().get('teamId', '')
-
-        # Fetch ALL pending requests and filter manually
-        # This avoids field name mismatch issues
-        all_reqs = db.collection('contact_change_requests')\
-                     .where('status', '==', 'pending')\
-                     .stream()
-
-        results = []
-        for r in all_reqs:
-            d = r.to_dict()
-
-            # Match either team_id or teamId field
-            req_team = d.get('team_id') or d.get('teamId', '')
-
-            # M1 sees only their team, M2 sees all
-            if role == 'm1_manager' and req_team != team_id:
-                continue
-
-            d['request_id'] = r.id
-            if d.get('created_at'):
-                try:
-                    d['created_at'] = d['created_at'].strftime(
-                        '%d %b %Y %H:%M'
-                    )
-                except Exception:
-                    d['created_at'] = str(d['created_at'])
-            results.append(d)
-
-        return jsonify(results), 200
-
-    except Exception as e:
-        print(f"get_pending_change_requests error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ── APPROVE OR REJECT — M1 Manager ───────────────────────────────────────────
-@leads_bp.route(
-    '/api/leads/change-request/<request_id>/review',
-    methods=['POST']
-)
-def review_change_request(request_id):
-    auth_error = require_auth()
-    if auth_error:
-        return auth_error
-
-    uid  = session['uid']
-    role = session['role']
-
-    if role not in ['m1_manager', 'm2_manager']:
-        return jsonify({'error': 'Access denied'}), 403
-
-    try:
-        db = get_firestore_client()
-
-        data   = request.get_json()
-        action = data.get('action')
-
-        if action not in ['approve', 'reject']:
-            return jsonify({'error': 'Invalid action'}), 400
-
-        req_ref  = db.collection('contact_change_requests')\
-                     .document(request_id)
-        req_doc  = req_ref.get()
-
-        if not req_doc.exists:
-            return jsonify({'error': 'Request not found'}), 404
-
-        req_data = req_doc.to_dict()
-
-        # Get reviewer email
-        reviewer_doc  = db.collection('users').document(uid).get()
-        reviewed_by   = reviewer_doc.to_dict().get('email', uid)
-
-        if action == 'approve':
-            # Apply the change to the lead
-            db.collection('leads')\
-              .document(req_data['lead_id'])\
-              .update({
-                  req_data['field']: req_data['new_value'],
-                  'updatedAt':       firestore.SERVER_TIMESTAMP
-              })
-            status    = 'approved'
-            notif_msg = (
-                f"Your request to change {req_data['field']} "
-                f"for '{req_data['lead_name']}' was approved."
-            )
-        else:
-            status    = 'rejected'
-            notif_msg = (
-                f"Your request to change {req_data['field']} "
-                f"for '{req_data['lead_name']}' was rejected."
-            )
-
-        # Update request status
-        req_ref.update({
-            'status':      status,
-            'reviewed_by': reviewed_by,
-            'reviewed_at': firestore.SERVER_TIMESTAMP
-        })
-
-        # Notify the employee
-        emp_uid = req_data.get('requested_uid', '')
-        if emp_uid:
-            db.collection('notifications').document().set({
-                'userId':    emp_uid,
-                'message':   notif_msg,
-                'type':      'change_request_result',
-                'isRead':    False,
-                'createdAt': firestore.SERVER_TIMESTAMP
-            })
-
-        return jsonify({'message': f'Request {status} successfully'}), 200
-
-    except Exception as e:
-        print(f"review_change_request error: {e}")
-        return jsonify({'error': str(e)}), 500
+        })    

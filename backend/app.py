@@ -25,6 +25,8 @@ from routes.leads import leads_bp
 app.register_blueprint(leads_bp)
 from routes.tasks import tasks_bp
 app.register_blueprint(tasks_bp)
+from routes.change_requests import change_requests_bp
+app.register_blueprint(change_requests_bp)
 
 from routes.notifications import notifications_bp
 app.register_blueprint(notifications_bp)
